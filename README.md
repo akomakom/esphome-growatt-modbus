@@ -6,13 +6,19 @@ Direct Growatt - RS485 - Home Assistant integration
 This project aims to interface Home Assistant with a Solar inverter (focusing on Growatt) directly via RS485 (Modbus),
 eliminating intermediaries like SA.
 
+# Status
+
 Currently data for most telemetry can be extracted in realtime.  Controlling the inverter is not yet supported.
+Some of the values are sometimes wrong (work in progress).
+Feel free to submit PRs to fix these issues.
+
 
 # Hardware Requirements
 
 * Currently only tested with the Growatt SPH 10000TL-HU-US-B
 * A Microcontroller like an ESP32  (This example uses a generic ESP32-C6, but custom devices like LilyGO T-CAN485 may be simpler)
 * A RS485 module for the microcontroller (If not built-in).  I used a HiLetgo TTL to RS485 because it works at 3.3v like the ESP32.
+* A sacrificial ethernet cable (pinout below), connected to the RS485 module (by cutting it in half)
 
 # Pinout
 
