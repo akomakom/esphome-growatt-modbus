@@ -44,5 +44,6 @@ Feel free to submit PRs to add support for other inverters.
 # Results
 
 ![Example Visualization](readme/ha-graphs-example1.png)
-![Example Data Values](readme/ha-overview-example1.png)
-![Example Data Values](readme/ha-overview-example4.png)
+
+|---|---|
+| ![Example Data Values](readme/ha-overview-example1.png) | ![Example Data Values](readme/ha-overview-example4.png) |
