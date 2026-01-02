@@ -156,21 +156,37 @@ sensor:
 # INVERTER
 # ============================================
 
-  # Inverter AC Output Power (Address 35)
-  # Note: Address 36 (U_WORD) also works but limited to 6553.5W max
+  # Inverter AC Output Power (Address 35) - DISABLED, using TEST sensors below
+  # Note: This address is being tested with different word sizes in TEST section
+  # Original config: U_DWORD with 0.1 multiplier, but overflows at high loads
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 35
+  #   name: "AC Output Power"
+  #   register_type: read
+  #   value_type: U_DWORD
+  #   unit_of_measurement: "W"
+  #   device_class: power
+  #   filters:
+  #     - multiply: 0.1
+  #     - median:
+  #         window_size: 7
+  #         send_every: 1
+
+
+  # Test Address 35 as S_DWORD (signed 32-bit)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 35
     name: "AC Output Power"
     register_type: read
-    value_type: U_DWORD
+    value_type: S_DWORD
     unit_of_measurement: "W"
     device_class: power
+    accuracy_decimals: 1
     filters:
       - multiply: 0.1
-      - median:
-          window_size: 7
-          send_every: 1
+
 
   # Inverter DC Temperature (Address 93)
   - platform: modbus_controller
@@ -315,10 +331,12 @@ sensor:
 # ============================================
 
   # AC Output Current L1 (Address 39)
+  # Likely inaccurate - reads too high
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 39
     name: "AC Output Current L1"
+    id: ac_output_current_l1
     register_type: read
     value_type: U_WORD
     unit_of_measurement: "A"
@@ -327,10 +345,12 @@ sensor:
       - multiply: 0.1
 
   # AC Output Current L2 (Address 43)
+  # Likely inaccurate - reads too high
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 43
     name: "AC Output Current L2"
+    id: ac_output_current_l2
     register_type: read
     value_type: U_WORD
     unit_of_measurement: "A"
@@ -411,7 +431,9 @@ sensor:
     filters:
       - multiply: 0.1
 
-  # Today Battery Charge (Address 1056) - WRONG VALUES
+  # Today Battery Charge (Address 1056) - FIXED MULTIPLIER
+  # Was 0.001 (too small), tested 0.01 (still too small showing 0.05kWh)
+  # Now using 0.1 to match Today Battery Discharge format
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1056
@@ -423,7 +445,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     filters:
-      - multiply: 0.001
+      - multiply: 0.1
       
   # Today Battery Discharge (Address 1052)
   - platform: modbus_controller
@@ -512,36 +534,35 @@ sensor:
 # ============================================
 # Looking for Today Solar Production (~30 kWh expected)
 
-  # Load Output Power (Address 36)
-  # Similar to AC Output Power (35) but slightly different - likely load-side measurement
-  # Shows 470W vs 456W at address 35
-  # Also resistant to garbage data like 500000 at AC Output (35)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 36
-    name: "Load Output Power Alt"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
+######  These two are only correct at low load:
+  # # Load Output Power (Address 36)
+  # # Similar to AC Output Power (35) but slightly different - likely load-side measurement
+  # # Shows 470W vs 456W at address 35
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 36
+  #   name: "Load Output Power Alt"
+  #   register_type: read
+  #   value_type: U_WORD
+  #   unit_of_measurement: "W"
+  #   device_class: power
+  #   accuracy_decimals: 1
+  #   filters:
+  #     - multiply: 0.1
 
-  # Load Output Power (Address 1038)
-  # Similar to AC Output but slightly different - likely load-side measurement
-  # Also resistant to garbage data like 500000 at AC Output (35)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1038
-    name: "Load Output Power"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
+  # # Load Output Power (Address 1038)
+  # # Similar to AC Output but slightly different - likely load-side measurement
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 1038
+  #   name: "Load Output Power"
+  #   register_type: read
+  #   value_type: U_WORD
+  #   unit_of_measurement: "W"
+  #   device_class: power
+  #   accuracy_decimals: 1
+  #   filters:
+  #     - multiply: 0.1
 
   # Battery Charge/Discharge Voltage (Address 1097)
   # Matches battery charge voltage and battery discharge voltage on LCD (55.6V)
