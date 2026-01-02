@@ -43,5 +43,5 @@ Feel free to submit PRs to fix these issues.
 
 # Results
 
-![Example Visualization](readme/ha-graphs-example.png)
-![Example Data Values](readme/ha-overview-example.png)
+![Example Visualization](readme/ha-graphs-example1.png)
+![Example Data Values](readme/ha-overview-example1.png)
