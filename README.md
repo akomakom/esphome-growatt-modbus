@@ -9,8 +9,11 @@ eliminating intermediaries like SA.
 # Status
 
 Currently data for most telemetry can be extracted in realtime.  Controlling the inverter is not yet supported.
+
 Some of the values are sometimes wrong (work in progress).
+
 Feel free to submit PRs to fix these issues.
+
 Feel free to submit PRs to add support for other inverters.
 
 # Hardware Requirements
@@ -31,20 +34,23 @@ Feel free to submit PRs to add support for other inverters.
 # Software Requirements
 
 * Home Assistant (you can use docker)
-* ESPHome Builder (you can use docker as well)
+* ESPHome Builder (you can use docker as well, can be installed on a different machine)
 
 # Installation
 
 * Follow the ESPHome Builder instructions to install ESPHome on your microcontroller.  You may need to use web.esphome.io to initialize a new MCU.
 * Create a new ESPHome device in ESPHome Builder.  It will generate the top of your yaml file with MCU and authentication details.
 * Ensure that the auto-generated config loads on the microcontroller (it will do nothing)  
-* Add the contents of the yaml file in this repo to the yaml file in ESPHome Builder, and reinstall.
 * The device should appear in Home Assistant.
+* Add the contents of the yaml file in this repo to the yaml file in ESPHome Builder, and reinstall.
+
 
 # Results
 
+Manually Created Dashboard
 ![Example Visualization](readme/ha-graphs-example1.png)
 
 Misc values |  More Values
 :-------------------------:|:-------------------------:
 ![Example Data Values](readme/ha-overview-example1.png) | ![Example Data Values](readme/ha-overview-example4.png)
+
