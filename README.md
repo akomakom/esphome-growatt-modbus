@@ -18,9 +18,9 @@ Feel free to submit PRs to add support for other inverters.
 
 # Hardware Requirements
 
-* Currently only tested with the Growatt S`PH 10000TL-HU-US-B` running HMI Version `SK110.04-08051`
+* Currently only tested with the Growatt `SPH 10000TL-HU-US-B` running HMI Version `SK110.04-08051`
 * A Microcontroller like an `ESP32`  (I used a generic `ESP32-C6`, but custom devices like LilyGO T-CAN485 may be simpler)
-* A RS485 module for the microcontroller (If not built-in).  I used a HiLetgo TTL to RS485 because it works at 3.3v like the ESP32.
+* A RS485 module for the microcontroller (If not built-in).  I used a HiLetgo TTL to RS485 because it works at 3.3v like the ESP32.  It's connected via 4 pins (UART): TX (6), RX (7), GND, VCC (see yaml)
 * A sacrificial ethernet cable (pinout below), connected to the RS485 module (by cutting it in half)
 
 # Pinout
