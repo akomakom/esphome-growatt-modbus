@@ -35,5 +35,7 @@ Currently data for most telemetry can be extracted in realtime.  Controlling the
 * Add the contents of the yaml file in this repo to the yaml file in ESPHome Builder, and reinstall.
 * The device should appear in Home Assistant.
 
+# Results
 
-
+![Example Visualization](readme/ha-graphs-example.png)
+![Example Data Values](readme/ha-overview-example.png)
