@@ -14,6 +14,10 @@ uart:
 modbus:
   id: mod_bus
   uart_id: mod_uart
+  # This adds a buffer at the end of every message to ensure the line is quiet
+  # may not be needed
+  send_wait_time: 20ms
+  
 
 # Define the "Parent" Controller
 modbus_controller:
@@ -21,7 +25,8 @@ modbus_controller:
     address: 0x01
     modbus_id: mod_bus
     setup_priority: -10
-    update_interval: 10s
+    command_throttle: 30ms # 30ms between commands to avoid flooding the bus
+    update_interval: 10s # 10 seconds between updates
 
 
 sensor:
@@ -174,11 +179,13 @@ sensor:
   #         send_every: 1
 
 
+  # This is the inverter AC Output (inverter icon on LCD)
+  # It is near zero when using grid to power loads.
   # Test Address 35 as S_DWORD (signed 32-bit)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 35
-    name: "AC Output Power"
+    name: "AC Production"
     register_type: read
     value_type: S_DWORD
     unit_of_measurement: "W"
@@ -197,6 +204,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "°C"
     device_class: temperature
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -209,6 +217,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "°C"
     device_class: temperature
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -281,6 +290,7 @@ sensor:
     unit_of_measurement: "°C"
     device_class: temperature
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -416,6 +426,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -428,6 +439,7 @@ sensor:
     unit_of_measurement: "kWh"
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -444,6 +456,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
       
@@ -458,6 +471,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -476,6 +490,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -490,6 +505,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -510,6 +526,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -526,6 +543,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
+    skip_updates: 5  # Poll every 60s (10s × 6 updates)
     filters:
       - multiply: 0.1
 
@@ -535,34 +553,39 @@ sensor:
 # Looking for Today Solar Production (~30 kWh expected)
 
 ######  These two are only correct at low load:
-  # # Load Output Power (Address 36)
-  # # Similar to AC Output Power (35) but slightly different - likely load-side measurement
-  # # Shows 470W vs 456W at address 35
-  # - platform: modbus_controller
-  #   modbus_controller_id: growatt_sph
-  #   address: 36
-  #   name: "Load Output Power Alt"
-  #   register_type: read
-  #   value_type: U_WORD
-  #   unit_of_measurement: "W"
-  #   device_class: power
-  #   accuracy_decimals: 1
-  #   filters:
-  #     - multiply: 0.1
+  # Load Output Power (Address 36)
+  # AC Output Power Alt (Address 36) - DUPLICATE OF ADDRESS 35
+  # Matches address 35 exactly - both measure inverter AC output, NOT load
+  # Changed to S_WORD to fix overflow issue
+  # Negative values = inverter self-consumption when on grid power
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 36
+    name: "AC Output Power (36)"
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "W"
+    device_class: power
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
 
-  # # Load Output Power (Address 1038)
-  # # Similar to AC Output but slightly different - likely load-side measurement
-  # - platform: modbus_controller
-  #   modbus_controller_id: growatt_sph
-  #   address: 1038
-  #   name: "Load Output Power"
-  #   register_type: read
-  #   value_type: U_WORD
-  #   unit_of_measurement: "W"
-  #   device_class: power
-  #   accuracy_decimals: 1
-  #   filters:
-  #     - multiply: 0.1
+  # AC Output Power (Address 1038) - DUPLICATE OF ADDRESS 35
+  # Matches address 35 exactly - both measure inverter AC output, NOT load
+  # Changed to S_WORD to fix overflow issue
+  # Negative values = inverter self-consumption when on grid power
+  # NOTE: Actual Load Power register has NOT been found yet
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1038
+    name: "AC Output Power (1038)"
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "W"
+    device_class: power
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
 
   # Battery Charge/Discharge Voltage (Address 1097)
   # Matches battery charge voltage and battery discharge voltage on LCD (55.6V)
