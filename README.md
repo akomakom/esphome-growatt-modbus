@@ -44,6 +44,12 @@ Feel free to submit PRs to add support for other inverters.
 * The device should appear in Home Assistant.
 * Add the contents of the yaml file in this repo to the yaml file in ESPHome Builder, and reinstall.
 
+# Notes
+
+* As of 2026/01, no "Load" related addresses have been found. 
+    A synthetic helper can be created in Home Assistant to calculate it (AC output - Grid CT) as follows:
+    `{{ states('sensor.esphome_solar_1_ac_output_power_36') | float - states('sensor.esphome_solar_1_grid_ct_power') | float }}`
+    (adjust for your device name)
 
 # Results
 
