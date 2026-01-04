@@ -46,12 +46,9 @@ Feel free to submit PRs to add support for other inverters.
 
 # Notes
 
-* As of 2026/01, no "Load" related addresses have been found. 
-    A synthetic helper can be created in Home Assistant to calculate it (AC output - Grid CT) as follows:
-    ```
-        {{ states('sensor.esphome_solar_1_ac_output_power_36') | float - states('sensor.esphome_solar_1_grid_ct_power') | float }}
-    ```
-    (adjust for your device name)
+* There are additional commented out sensors that can be enabled if desired (see yaml).
+* Addresses were determined by trial and error and this [datasheet](https://github.com/HotNoob/PythonProtocolGateway/blob/main/protocols/growatt/growatt_2020_v1.24.input_registry_map.csv)
+
 
 # Results
 
