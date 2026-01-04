@@ -2,7 +2,7 @@
 # Append this to your esphome yaml file in ESPHome Builder:
 ##############################################
 
-# THE UART: Hardware pins for your RS485 module
+# UART Configuration for RS485
 uart:
   id: mod_uart
   tx_pin: GPIO6
@@ -10,29 +10,81 @@ uart:
   baud_rate: 115200
   stop_bits: 1
 
-# THE MODBUS ENGINE
+# Modbus Configuration
 modbus:
   id: mod_bus
   uart_id: mod_uart
-  # This adds a buffer at the end of every message to ensure the line is quiet
-  # may not be needed
   send_wait_time: 20ms
-  
 
-# Define the "Parent" Controller
+# Modbus Controller
 modbus_controller:
   - id: growatt_sph
     address: 0x01
     modbus_id: mod_bus
     setup_priority: -10
-    command_throttle: 30ms # 30ms between commands to avoid flooding the bus
-    update_interval: 10s # 10 seconds between updates
+    command_throttle: 30ms
+    update_interval: 10s
 
+# Text Sensors for Status
+text_sensor:
+  # Inverter Status (Address 0)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 0
+    name: "Inverter Status"
+    register_type: read
+    raw_encode: HEXBYTES
+    lambda: |-
+      uint16_t value = modbus_controller::word_from_hex_str(x, 0);
+      switch(value) {
+        case 0: return std::string("Waiting");
+        case 1: return std::string("Normal");
+        case 3: return std::string("Fault");
+        default: return std::string("Unknown");
+      }
 
 sensor:
 # ============================================
-# PV SOLAR STRINGS
+# INVERTER STATUS & OPERATION
 # ============================================
+
+  # Inverter Status Code (Address 0)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 0
+    name: "Inverter Status Code"
+    id: inverter_status_code
+    register_type: read
+    value_type: U_WORD
+
+  # Power Factor (Address 100)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 100
+    name: "Power Factor"
+    register_type: read
+    value_type: U_WORD
+    device_class: power_factor
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.0001
+
+# ============================================
+# PV SOLAR STRINGS - INSTANTANEOUS
+# ============================================
+
+  # Total PV Input Power (Address 1-2)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1
+    name: "PV Input Power Total"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    filters:
+      - multiply: 0.1
 
   # PV String 1 - Voltage (Address 3)
   - platform: modbus_controller
@@ -43,6 +95,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "V"
     device_class: voltage
+    state_class: measurement
     filters:
       - multiply: 0.1
 
@@ -55,19 +108,21 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "A"
     device_class: current
+    state_class: measurement
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
-  # PV String 1 - Power (Address 6)
+  # PV String 1 - Power (Address 5-6)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 6
+    address: 5
     name: "PV1 Power"
     register_type: read
-    value_type: U_WORD
+    value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     filters:
       - multiply: 0.1
 
@@ -80,6 +135,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "V"
     device_class: voltage
+    state_class: measurement
     filters:
       - multiply: 0.1
 
@@ -92,19 +148,21 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "A"
     device_class: current
+    state_class: measurement
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
-  # PV String 2 - Power (Address 10)
+  # PV String 2 - Power (Address 9-10)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 10
+    address: 9
     name: "PV2 Power"
     register_type: read
-    value_type: U_WORD
+    value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     filters:
       - multiply: 0.1
 
@@ -117,6 +175,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "V"
     device_class: voltage
+    state_class: measurement
     filters:
       - multiply: 0.1
 
@@ -129,105 +188,179 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "A"
     device_class: current
+    state_class: measurement
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
-  # PV String 3 - Power (Address 14)
+  # PV String 3 - Power (Address 13-14)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 14
+    address: 13
     name: "PV3 Power"
     register_type: read
-    value_type: U_WORD
+    value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
-    filters:
-      - multiply: 0.1
-
-  # Total Solar Power (Address 2)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 2
-    name: "PV Power"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-    device_class: power
+    state_class: measurement
     filters:
       - multiply: 0.1
 
 # ============================================
-# INVERTER
+# INVERTER AC OUTPUT
 # ============================================
 
-  # Inverter AC Output Power (Address 35) - DISABLED, using TEST sensors below
-  # Note: This address is being tested with different word sizes in TEST section
-  # Original config: U_DWORD with 0.1 multiplier, but overflows at high loads
-  # - platform: modbus_controller
-  #   modbus_controller_id: growatt_sph
-  #   address: 35
-  #   name: "AC Output Power"
-  #   register_type: read
-  #   value_type: U_DWORD
-  #   unit_of_measurement: "W"
-  #   device_class: power
-  #   filters:
-  #     - multiply: 0.1
-  #     - median:
-  #         window_size: 7
-  #         send_every: 1
-
-
-  # This is the inverter AC Output (inverter icon on LCD)
-  # It is near zero when using grid to power loads.
-  # Test Address 35 as S_DWORD (signed 32-bit)
+  # AC Output Power Total (Address 35-36)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 35
-    name: "AC Production"
+    name: "AC Output Power"
     register_type: read
-    value_type: S_DWORD
+    value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
+    filters:
+      - multiply: 0.1
+
+  # Grid Frequency (Address 37)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 37
+    name: "Grid Frequency"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "Hz"
+    device_class: frequency
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+
+  # Grid Voltage L1 (Address 38)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 38
+    name: "Grid Voltage L1"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    filters:
+      - multiply: 0.1
+
+  # Grid Current L1 (Address 39)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 39
+    name: "Grid Current L1"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "A"
+    device_class: current
+    state_class: measurement
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
+  # Grid Power L1 (Address 40-41)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 40
+    name: "Grid Power L1"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "VA"
+    device_class: apparent_power
+    state_class: measurement
+    filters:
+      - multiply: 0.1
 
-  # Inverter DC Temperature (Address 93)
+  # Grid Voltage L2 (Address 42)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 42
+    name: "Grid Voltage L2"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    filters:
+      - multiply: 0.1
+
+  # Grid Current L2 (Address 43)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 43
+    name: "Grid Current L2"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "A"
+    device_class: current
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+
+  # Grid Power L2 (Address 44-45)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 44
+    name: "Grid Power L2"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "VA"
+    device_class: apparent_power
+    state_class: measurement
+    filters:
+      - multiply: 0.1
+
+# ============================================
+# INVERTER TEMPERATURES
+# ============================================
+
+  # Inverter Temperature (Address 93)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 93
-    name: "Inverter Temperature DC"
+    name: "Inverter Temperature"
     register_type: read
     value_type: U_WORD
     unit_of_measurement: "°C"
     device_class: temperature
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    state_class: measurement
+    skip_updates: 5
     filters:
       - multiply: 0.1
 
-  # Inverter AC Temperature (Address 94)
+  # IPM Temperature (Address 94)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 94
-    name: "Inverter Temperature AC"
+    name: "IPM Temperature"
     register_type: read
     value_type: U_WORD
     unit_of_measurement: "°C"
     device_class: temperature
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    state_class: measurement
+    skip_updates: 5
     filters:
       - multiply: 0.1
 
-  # Inverter Operation Mode (Address 0)
+  # Boost Temperature (Address 95)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 0
-    name: "Inverter Operation Mode"
+    address: 95
+    name: "Boost Temperature"
     register_type: read
     value_type: U_WORD
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    skip_updates: 5
+    filters:
+      - multiply: 0.1
 
 # ============================================
 # BATTERY
@@ -242,6 +375,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "V"
     device_class: voltage
+    state_class: measurement
     filters:
       - multiply: 0.1
 
@@ -254,33 +388,37 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "%"
     device_class: battery
+    state_class: measurement
 
-  # Battery Discharge Power (Address 1009)
+  # Battery Discharge Power (Address 1009-1010)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1009
-    name: "Battery Discharge"
-    id: bat_power
+    name: "Battery Discharge Power"
+    id: battery_discharge_power
     register_type: read
     value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     filters:
       - multiply: 0.1
 
-  # Battery Charge Power (Address 1011)
+  # Battery Charge Power (Address 1011-1012)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1011
-    name: "Battery Charge"
+    name: "Battery Charge Power"
+    id: battery_charge_power
     register_type: read
     value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     filters:
       - multiply: 0.1
 
-  # Battery Temperature (Address 1039)
+  # Battery Temperature (Address 1039-1040)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1039
@@ -289,177 +427,239 @@ sensor:
     value_type: U_DWORD
     unit_of_measurement: "°C"
     device_class: temperature
+    state_class: measurement
     accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    skip_updates: 5
     filters:
       - multiply: 0.1
 
 # ============================================
-# GRID - VOLTAGE & FREQUENCY
+# GRID CT - IMPORT POWER (Pactouser)
 # ============================================
 
-  # Grid Frequency (Address 37)
+  # Grid Import Power L1 (Address 1015-1016)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 37
-    name: "Grid Frequency"
+    address: 1015
+    name: "Grid Import Power L1"
+    id: grid_import_l1
     register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "Hz"
-    device_class: frequency
-    filters:
-      - multiply: 0.01
-
-  # Grid Voltage L1 (Address 38)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 38
-    name: "Grid Voltage L1"
-    id: grid_voltage_l1
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "V"
-    device_class: voltage
+    value_type: S_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
-  # Grid Voltage L2 (Address 42)
+  # Grid Import Power L2 (Address 1017-1018)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 42
-    name: "Grid Voltage L2"
-    id: grid_voltage_l2
+    address: 1017
+    name: "Grid Import Power L2"
+    id: grid_import_l2
     register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "V"
-    device_class: voltage
+    value_type: S_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
-# ============================================
-# GRID - AC OUTPUT CURRENT
-# ============================================
-
-  # AC Output Current L1 (Address 39)
-  # Likely inaccurate - reads too high
+  # Total Grid Import Power (Address 1021-1022)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 39
-    name: "AC Output Current L1"
-    id: ac_output_current_l1
+    address: 1021
+    name: "Grid Import Power Total"
+    id: grid_import_total
     register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "A"
-    device_class: current
-    filters:
-      - multiply: 0.1
-
-  # AC Output Current L2 (Address 43)
-  # Likely inaccurate - reads too high
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 43
-    name: "AC Output Current L2"
-    id: ac_output_current_l2
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "A"
-    device_class: current
+    value_type: S_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
 # ============================================
-# GRID - CT POWER READINGS
+# GRID CT - EXPORT POWER (Pactogrid)
 # ============================================
-# Import/Export behavior:
-# - Addresses 1023/1025: Positive when EXPORTING to grid, 0 when importing
-# - Addresses 41/45: Positive when IMPORTING from grid, 0 when exporting
-# These are mutually exclusive pairs
-# Formula: (1023 + 1025) - (41 + 45) = Positive for export, Negative for import
 
-  # Grid CT L1 Export Power (Address 1023)
-  # Raw value: Positive when exporting to grid, 0 when importing
+  # Grid Export Power L1 (Address 1023-1024)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1023
-    name: "Grid CT L1 Export Power"
-    id: grid_l1_ct_export_power
+    name: "Grid Export Power L1"
+    id: grid_export_l1
     register_type: read
     value_type: S_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     filters:
       - multiply: 0.1
 
-  # Grid CT L2 Export Power (Address 1025)
-  # Raw value: Positive when exporting to grid, 0 when importing
+  # Grid Export Power L2 (Address 1025-1026)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1025
-    name: "Grid CT L2 Export Power"
-    id: grid_l2_ct_export_power
+    name: "Grid Export Power L2"
+    id: grid_export_l2
     register_type: read
     value_type: S_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     filters:
       - multiply: 0.1
 
-  # Grid CT L1 Import Power (Address 41)
-  # Raw value: Positive when importing from grid, 0 when exporting
+  # Total Grid Export Power (Address 1029-1030)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 41
-    name: "Grid CT L1 Import Power"
-    id: grid_l1_ct_import_power
+    address: 1029
+    name: "Grid Export Power Total"
+    id: grid_export_total
     register_type: read
-    value_type: U_WORD
+    value_type: S_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
+    filters:
+      - multiply: 0.1
+
+# ============================================
+# INVERTER TO LOCAL LOAD POWER (PLocalLoad)
+# ============================================
+
+  # Inverter to Load L1 (Address 1031-1032)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1031
+    name: "Inverter to Load L1"
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
-  # Grid CT L2 Import Power (Address 45)
-  # Raw value: Positive when importing from grid, 0 when exporting
+  # Inverter to Load L2 (Address 1033-1034)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 45
-    name: "Grid CT L2 Import Power"
-    id: grid_l2_ct_import_power
+    address: 1033
+    name: "Inverter to Load L2"
     register_type: read
-    value_type: U_WORD
+    value_type: S_DWORD
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
-  # Grid CT Power (Combined Import/Export)
-  # Positive = exporting to grid, Negative = importing from grid
-  # Formula: (Export L1 + Export L2) - (Import L1 + Import L2)
+  # Total Inverter to Load (Address 1037-1038)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1037
+    name: "Inverter to Load Total"
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+
+# ============================================
+# CALCULATED SENSORS
+# ============================================
+
+  # Net Grid Power (Positive = Import, Negative = Export)
   - platform: template
-    name: "Grid CT Power"
+    name: "Grid Power Net"
+    id: grid_power_net
     unit_of_measurement: "W"
     device_class: power
+    state_class: measurement
     accuracy_decimals: 1
     lambda: |-
-      float export_l1 = id(grid_l1_ct_export_power).state;
-      float export_l2 = id(grid_l2_ct_export_power).state;
-      float import_l1 = id(grid_l1_ct_import_power).state;
-      float import_l2 = id(grid_l2_ct_import_power).state;
-      if (isnan(export_l1)) export_l1 = 0;
-      if (isnan(export_l2)) export_l2 = 0;
-      if (isnan(import_l1)) import_l1 = 0;
-      if (isnan(import_l2)) import_l2 = 0;
-      return (export_l1 + export_l2) - (import_l1 + import_l2);
+      float import_total = id(grid_import_total).state;
+      float export_total = id(grid_export_total).state;
+      if (isnan(import_total)) import_total = 0;
+      if (isnan(export_total)) export_total = 0;
+      return import_total - export_total;
+    update_interval: 10s
+
+  # Net Battery Power (Positive = Charging, Negative = Discharging)
+  - platform: template
+    name: "Battery Power Net"
+    id: battery_power_net
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
+    lambda: |-
+      float charge = id(battery_charge_power).state;
+      float discharge = id(battery_discharge_power).state;
+      if (isnan(charge)) charge = 0;
+      if (isnan(discharge)) discharge = 0;
+      return charge - discharge;
     update_interval: 10s
 
 # ============================================
 # ENERGY COUNTERS - DAILY
 # ============================================
 
-  # Today Grid Import (Address 1044)
+  # Today AC Production (Address 53-54)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 53
+    name: "Today AC Production"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 1
+    skip_updates: 5
+    filters:
+      - multiply: 0.1
+
+  # Today PV Production (Address 1149-1150)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1149
+    name: "Today PV Production"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 1
+    skip_updates: 5
+    filters:
+      - multiply: 0.1
+
+  # Today Load Energy from Inverter (Address 1060-1061)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1060
+    name: "Today Inverter to Load Energy"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 1
+    skip_updates: 5
+    filters:
+      - multiply: 0.1
+
+  # Today Grid Import Energy (Address 1044-1045)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1044
@@ -470,26 +670,26 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    skip_updates: 5
     filters:
       - multiply: 0.1
 
+  # Today Grid Export Energy (Address 1048-1049)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 1049
+    address: 1048
     name: "Today Grid Export"
     register_type: read
-    value_type: U_WORD
+    value_type: U_DWORD
     unit_of_measurement: "kWh"
+    device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    skip_updates: 5
     filters:
       - multiply: 0.1
 
-  # Today Battery Charge (Address 1056) - FIXED MULTIPLIER
-  # Was 0.001 (too small), tested 0.01 (still too small showing 0.05kWh)
-  # Now using 0.1 to match Today Battery Discharge format
+  # Today Battery Charge (Address 1056-1057)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1056
@@ -500,11 +700,11 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    skip_updates: 5
     filters:
       - multiply: 0.1
-      
-  # Today Battery Discharge (Address 1052)
+
+  # Today Battery Discharge (Address 1052-1053)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1052
@@ -515,7 +715,7 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    skip_updates: 5
     filters:
       - multiply: 0.1
 
@@ -523,7 +723,37 @@ sensor:
 # ENERGY COUNTERS - LIFETIME
 # ============================================
 
-  # Total Grid Import (Address 1046)
+  # Total AC Production (Address 55-56)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 55
+    name: "Total AC Production"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 1
+    skip_updates: 5
+    filters:
+      - multiply: 0.1
+
+  # Total PV Production (Address 91-92)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 91
+    name: "Total PV Production"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 1
+    skip_updates: 5
+    filters:
+      - multiply: 0.1
+
+  # Total Inverter to Load Energy (Address 1046-1047)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1046
@@ -534,11 +764,11 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
+    skip_updates: 5
     filters:
       - multiply: 0.1
 
-  # Total Grid Export (Address 1050)
+  # Total Grid Export (Address 1050-1051)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1050
@@ -549,506 +779,17 @@ sensor:
     device_class: energy
     state_class: total_increasing
     accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# EXPERIMENTAL - INCORRECT VALUES
-# ============================================
-
-  # Today Solar Production / PV Daily Total (Address 1150) - CONFIRMED!
-  # Shows 30.9 kWh matching LCD "PV Daily Total" (was 30.2 kWh earlier in day)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1150
-    name: "Today Solar Production"
-    id: today_solar_production
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
-    filters:
-      - multiply: 0.1
-
-  # Unknown Counter (Address 1160)
-  # Shows 39.2 kWh but doesn't match any known daily or lifetime totals
-  # Total load consumption is >100 kWh, so this is something else
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1160
-    name: "Unknown Counter (1160)"
-    id: unknown_counter_1160
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# UNIDENTIFIED SENSORS
-# ============================================
-
-  # Unknown Counter (Address 1162)
-  # Matches address 1160 exactly (both show 39.2 kWh)
-  # Doesn't match any known daily or lifetime totals (total load >100 kWh)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1162
-    name: "Unknown Counter (1162)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5  # Poll every 60s (10s × 6 updates)
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# NEWLY CONFIRMED REGISTERS
-# ============================================
-
-  # Address 53 - Possible Today AC Production (matches Today Load pattern)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 53
-    name: "Possible Today AC Production"
-    register_type: read
-    value_type: U_DWORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 55 - Unknown Counter (stable ~120)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 55
-    name: "Unknown Counter (55)"
-    register_type: read
-    value_type: U_DWORD
-    unit_of_measurement: "kWh"
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 67 - Hourly Counter (matches 1152/1154/1158/1182 pattern)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 67
-    name: "Hourly Counter (67)"
-    register_type: read
-    value_type: U_DWORD
-    unit_of_measurement: "kWh"
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1063 - Unknown Counter (tracks AC Production L1)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1063
-    name: "Unknown Counter (1063)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1067 - Unknown Frequency (duplicate)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1067
-    name: "Unknown Frequency (1067)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "Hz"
-    device_class: frequency
-    state_class: measurement
-    accuracy_decimals: 2
-    filters:
-      - multiply: 0.01
-
-  # Address 1068 - Unknown Voltage L2 (duplicate)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1068
-    name: "Unknown Voltage L2 (1068)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1069 - AC Output Current (L1 or L2)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1069
-    name: "AC Output Current L? (1069)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "A"
-    device_class: current
-    state_class: measurement
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1071 - AC Production L1 (duplicate of 1031)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1071
-    name: "AC Production L1 (1071)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1072 - Grid Voltage L2 (duplicate)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1072
-    name: "Grid Voltage L2 (1072)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1073 - Unknown (proportional to AC Production)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1073
-    name: "Unknown related to AC output (1073)"
-    register_type: read
-    value_type: U_WORD
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1075 - AC Production L1 (duplicate of 1031/1071)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1075
-    name: "AC Production L1 (1075)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1182 - Hourly Counter (matches 1152/1154/1158)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1182
-    name: "Hourly Counter (1182)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1184 - Unknown Counter (48.7 kWh)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1184
-    name: "Unknown Counter (1184)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Address 1186 - Unknown Counter (duplicate of 1184)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1186
-    name: "Unknown Counter (1186)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# AC PRODUCTION POWER - PER PHASE
-# ============================================
-
-  # AC Production L1 Power (Address 1031)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1031
-    name: "AC Production L1"
-    register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # AC Production L2 Power (Address 1033)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1033
-    name: "AC Production L2"
-    register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # AC Production Total (Address 1037) - Duplicate of address 35
-  # Keeping for verification purposes
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1037
-    name: "AC Production Total (1037)"
-    register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# ADDITIONAL ENERGY COUNTERS DISCOVERED
-# ============================================
-
-  # Unknown Counter (Address 1166)
-  # Shows 11.7 kWh, matches 1168 exactly
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1166
-    name: "Unknown Counter (1166)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
     skip_updates: 5
     filters:
       - multiply: 0.1
 
-  # Unknown Counter (Address 1168)
-  # Shows 11.7 kWh, matches 1166 exactly
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1168
-    name: "Unknown Counter (1168)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# CONTINUED LOAD POWER SEARCH
-# ============================================
-# Still searching for instantaneous load power register
-
-  # Grid CT L2 Power Duplicate (Address 1015)
-  # Seems more accurate than address 1025 (Grid CT L2 Power)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1015
-    name: "Grid CT L2 Power (1015)"
-    register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Grid CT L2 Power Duplicate (Address 1017)
-  # Matches addresses 1015 
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1017
-    name: "Grid CT L2 Power (1017)"
-    register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Unknown Counter (Address 1054)
-  # Shows 50.7, matches 1156 (51.5 kWh) - slowly incrementing
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1054
-    name: "Unknown Counter (1054)"
-    register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5
-    filters:
-      - multiply: 0.1
-
-  # Today AC Production (Address 1172)
-  # Roughly Today Grid Export + Today Load
-  # Shows 12.8 kWh when Today Grid Export is ~0.3 kWh
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1172
-    name: "Today AC Production"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5
-    filters:
-      - multiply: 0.1
-
-  # Today AC Production duplicate (Address 1174)
-  # Matches 1172 exactly
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1174
-    name: "Today AC Production (1174)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# HOURLY COUNTERS
-# ============================================
-# These reset to 0 on the hour (observed at 8AM and 9AM)
-
-  # Hourly Counter (Address 1152)
-  # Resets to 0 every hour, ranges 0-1 kWh
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1152
-    name: "Hourly Counter (1152)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Hourly Counter (Address 1154)
-  # Matches 1152, resets hourly
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1154
-    name: "Hourly Counter (1154)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-  # Hourly Counter (Address 1158)
-  # Matches 1152 and 1154, resets hourly
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1158
-    name: "Hourly Counter (1158)"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-
-# ============================================
-# ADDITIONAL DISCOVERED COUNTERS
-# ============================================
-
-  # Unknown Counter (Address 1060)
-  # Shows 5.8, pairs with 1156 (52.2 kWh) - likely 16-bit portion
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1060
-    name: "Unknown Counter (1060)"
-    register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5
-    filters:
-      - multiply: 0.1
-
-  # Static Value (Address 1058)
-  # Shows 62.1, not changing - possibly configuration/setting
+  # Total Battery Charge (Address 1058-1059)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1058
-    name: "Unknown Counter (1058)"
+    name: "Total Battery Charge"
     register_type: read
-    value_type: S_DWORD
-    unit_of_measurement: ""
-    accuracy_decimals: 1
-    skip_updates: 5
-    filters:
-      - multiply: 0.1
-
-  # Large Counter (Address 1176)
-  # Shows 6543.1 kWh - possibly lifetime total
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1176
-    name: "Large Counter (1176)"
-    register_type: read
-    value_type: U_WORD
+    value_type: U_DWORD
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
@@ -1057,30 +798,13 @@ sensor:
     filters:
       - multiply: 0.1
 
-  # Unknown Counter (Address 1178)
-  # Shows 37.7 kWh, matches 1180
+  # Total Battery Discharge (Address 1054-1055)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
-    address: 1178
-    name: "Unknown Counter (1178)"
+    address: 1054
+    name: "Total Battery Discharge"
     register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "kWh"
-    device_class: energy
-    state_class: total_increasing
-    accuracy_decimals: 1
-    skip_updates: 5
-    filters:
-      - multiply: 0.1
-
-  # Unknown Counter (Address 1180)
-  # Shows 37.7 kWh, matches 1178
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1180
-    name: "Unknown Counter (1180)"
-    register_type: read
-    value_type: U_WORD
+    value_type: U_DWORD
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
@@ -1090,158 +814,117 @@ sensor:
       - multiply: 0.1
 
 # ============================================
-# EXPANDED SEARCH - LOAD POWER & OTHER REGISTERS
+# RUNTIME
 # ============================================
-# Continuing search for load power and other registers
 
+  # Total Runtime (Address 57-58)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 57
+    name: "Total Runtime"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "h"
+    device_class: duration
+    state_class: total_increasing
+    accuracy_decimals: 1
+    skip_updates: 10
+    filters:
+      - multiply: 0.5  # Convert 0.5s to seconds
+      - lambda: return x / 3600.0;  # Convert seconds to hours
 
 # ============================================
-# TESTED REGISTERS LOG
+# PV STRING ENERGY COUNTERS (Optional)
 # ============================================
-# Documentation of all tested addresses and their results
-#
-# CONFIRMED WORKING REGISTERS (80+):
-#
-# Power Sensors (W):
-# - 35, 36, 1037, 1038: AC Production Total
-# - 41: Grid CT L1 Import Power (0-1415W) - Mutually exclusive with 1023
-# - 45, 1015, 1017: Grid CT L2 Import Power (0-1176W) - Mutually exclusive with 1025
-# - 1023: Grid CT L1 Export Power (0-1718W) - Mutually exclusive with 41
-# - 1025: Grid CT L2 Export Power (0-1883W) - Mutually exclusive with 45
-# - 1031, 1071, 1075: AC Production L1 (3 duplicates, 2016-2023W)
-# - 1033: AC Production L2 (2000-2011W)
-# - 1009: Battery Discharge Power
-# - 1011: Battery Charge Power
-#
-# Current Sensors (A):
-# - 39: AC Output Current L1 duplicate (14.8-15.3A) - matches address 38
-# - 43: AC Output Current L2 (14.8-15.1A)
-# - 1069, 1073: AC Output Current Total (15.9-16.0A) - duplicates
-#
-# Energy Counters (kWh):
-# - 53: Possible Today AC Production (7.5-12.8 kWh)
-# - 55: Unknown Counter (124.2-128.1 kWh, slowly incrementing)
-# - 67: Continuous Counter (6.8-9.8 kWh) - NOT hourly, accumulates continuously
-# - 91: Total PV Production (173.6-173.7 kWh) - Lifetime PV production (U_DWORD × 0.1)
-# - 1044: Today Grid Import (1.4 kWh)
-# - 1046: Total Grid Import (68.4 kWh)
-# - 1049: Today Grid Export (0.2-0.3 kWh)
-# - 1050: Total Grid Export (44.5-44.6 kWh)
-# - 1052: Today Battery Discharge (4.9 kWh)
-# - 1054: Unknown Counter (51.0 kWh, matches 1156)
-# - 1056: Today Battery Charge (4.5-5.7 kWh)
-# - 1058: Incrementing Counter (67.9) - NOT static, slowly incrementing
-# - 1060: Unknown Counter (11.7-12.0 kWh, pairs with 1156)
-# - 1063: Unknown Counter (186.0-187.3 W, tracks AC Production L1)
-# - 1150: Today Solar Production (10.1-11.7 kWh)
-# - 1152: Hourly Counter (0.3-1.7 kWh) - Resets to 0 on the hour
-# - 1154: Hourly Counter (0.3-1.7 kWh) - Resets to 0 on the hour
-# - 1156: Unknown Counter (52.5 kWh, matches 1054, pairs with 1060)
-# - 1158: Hourly Counter (0.1-1.6 kWh) - Resets to 0 on the hour
-# - 1160, 1162: Counter pair (45.1-45.6 kWh)
-# - 1166, 1168: Counter pair (11.9-12.0 kWh)
-# - 1172: Today AC Production (12.8 kWh) - Roughly Today Grid Export + Today Load
-# - 1174: Today AC Production duplicate (12.8 kWh) - Matches 1172
-# - 1176: Large Counter (6538.2-6538.8 kWh)
-# - 1178, 1180: Counter pair (43.4-43.9 kWh)
-# - 1182: Different Hourly Counter (0.3-4.8 kWh) - Different pattern than 1152/1154/1158
-# - 1184, 1186: Counter pair (68.2 kWh)
-#
-# Other Registers:
-# - 1039: Battery Temperature (15.5-16.2°C)
-# - 1067: Grid Frequency duplicate (60.00 Hz)
-# - 1068, 1072: Grid Voltage L2 duplicates (123.1-125.0V)
-# - 1097: Battery Charge/Discharge Voltage (55.6-57.0V)
-# - 1107: Battery Discharge/Max Charge Current (200.0A)
-# - 1140: Unknown Counter (168.1, slowly incrementing)
-#
-# TESTED AND REJECTED:
-# - 15-119: All 0W (no load power found in low addresses)
-# - 40: Returns 0A - NOT AC Current L1
-# - 42: Grid Voltage L2 duplicate (123.0V) - NOT AC Current L1
-# - 44: Returns 0A - NOT AC Current L1
-# - 47, 49, 51: All 0W
-# - 69, 71, 73, 75, 77: All 0W (no power sensors in mid-range)
-# - 93, 95: Inverter Temperature DC (not counters)
-# - 141-149: Modbus error (exception 2) - registers don't exist
-# - 1019-1036: No Grid CT L1 duplicate
-# - 1040-1043, 1053, 1055, 1057, 1059, 1061: Garbage values
-# - 1027, 1029, 1035: All 0W (TEST Load sensors)
-# - 1062, 1064, 1065, 1066, 1070, 1074, 1077-1081: All 0W (includes TEST Power sensors)
-# - 1151, 1153, 1155, 1157, 1159, 1161, 1163-1165, 1167, 1169-1171, 1173, 1175, 1177, 1179, 1181, 1183, 1185, 1187-1228: All 0 kWh
-# - 1190, 1192, 1194: All 0 kWh (no counters in higher range)
-# - 1250, 1252: Modbus error (exception 2) - registers don't exist
-#
-# KEY FINDINGS:
-# 1. Import/Export CT registers are mutually exclusive pairs:
-#    - Export: 1023 (L1), 1025 (L2) - Positive when exporting, 0 when importing
-#    - Import: 41 (L1), 45 (L2) - Positive when importing, 0 when exporting
-# 2. Grid CT Power formula: (1023 + 1025) - (41 + 45)
-#    - Positive = exporting to grid
-#    - Negative = importing from grid
-# 3. Address 39 is AC Output Current L1 duplicate (matches address 38)
-# 4. Address 1172/1174 is Today AC Production (roughly Today Grid Export + Today Load)
-# 5. No instantaneous load power register found - must calculate from other sensors
+# Uncomment if you want per-string energy tracking
 
-######  These two are only correct at low load:
-  # Load Output Power (Address 36)
-  # AC Output Power Alt (Address 36) - DUPLICATE OF ADDRESS 35
-  # Matches address 35 exactly - both measure inverter AC output, NOT load
-  # Changed to S_WORD to fix overflow issue
-  # Negative values = inverter self-consumption when on grid power
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 36
-    name: "AC Output Power (36)"
-    register_type: read
-    value_type: S_WORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
+  # # PV1 Today Energy (Address 59-60)
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 59
+  #   name: "PV1 Today Energy"
+  #   register_type: read
+  #   value_type: U_DWORD
+  #   unit_of_measurement: "kWh"
+  #   device_class: energy
+  #   state_class: total_increasing
+  #   accuracy_decimals: 1
+  #   skip_updates: 5
+  #   filters:
+  #     - multiply: 0.1
 
-  # AC Output Power (Address 1038) - DUPLICATE OF ADDRESS 35
-  # Matches address 35 exactly - both measure inverter AC output, NOT load
-  # Changed to S_WORD to fix overflow issue
-  # Negative values = inverter self-consumption when on grid power
-  # NOTE: Actual Load Power register has NOT been found yet
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1038
-    name: "AC Output Power (1038)"
-    register_type: read
-    value_type: S_WORD
-    unit_of_measurement: "W"
-    device_class: power
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
+  # # PV1 Total Energy (Address 61-62)
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 61
+  #   name: "PV1 Total Energy"
+  #   register_type: read
+  #   value_type: U_DWORD
+  #   unit_of_measurement: "kWh"
+  #   device_class: energy
+  #   state_class: total_increasing
+  #   accuracy_decimals: 1
+  #   skip_updates: 5
+  #   filters:
+  #     - multiply: 0.1
 
-  # Battery Charge/Discharge Voltage (Address 1097)
-  # Matches battery charge voltage and battery discharge voltage on LCD (55.6V)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1097
-    name: "Battery Charge/Discharge Voltage"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "V"
-    device_class: voltage
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
+  # # PV2 Today Energy (Address 63-64)
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 63
+  #   name: "PV2 Today Energy"
+  #   register_type: read
+  #   value_type: U_DWORD
+  #   unit_of_measurement: "kWh"
+  #   device_class: energy
+  #   state_class: total_increasing
+  #   accuracy_decimals: 1
+  #   skip_updates: 5
+  #   filters:
+  #     - multiply: 0.1
 
-  # Battery Discharge/Max Charge Current (Address 1107)
-  # Matches either battery discharge current or battery max charge current on LCD (20.0A)
-  - platform: modbus_controller
-    modbus_controller_id: growatt_sph
-    address: 1107
-    name: "Battery Discharge/Max Charge Current"
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "A"
-    device_class: current
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
+  # # PV2 Total Energy (Address 65-66)
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 65
+  #   name: "PV2 Total Energy"
+  #   register_type: read
+  #   value_type: U_DWORD
+  #   unit_of_measurement: "kWh"
+  #   device_class: energy
+  #   state_class: total_increasing
+  #   accuracy_decimals: 1
+  #   skip_updates: 5
+  #   filters:
+  #     - multiply: 0.1
+
+  # # PV3 Today Energy (Address 67-68)
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 67
+  #   name: "PV3 Today Energy"
+  #   register_type: read
+  #   value_type: U_DWORD
+  #   unit_of_measurement: "kWh"
+  #   device_class: energy
+  #   state_class: total_increasing
+  #   accuracy_decimals: 1
+  #   skip_updates: 5
+  #   filters:
+  #     - multiply: 0.1
+
+  # # PV3 Total Energy (Address 69-70)
+  # - platform: modbus_controller
+  #   modbus_controller_id: growatt_sph
+  #   address: 69
+  #   name: "PV3 Total Energy"
+  #   register_type: read
+  #   value_type: U_DWORD
+  #   unit_of_measurement: "kWh"
+  #   device_class: energy
+  #   state_class: total_increasing
+  #   accuracy_decimals: 1
+  #   skip_updates: 5
+  #   filters:
+  #     - multiply: 0.1
+
