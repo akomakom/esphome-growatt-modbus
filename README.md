@@ -29,7 +29,11 @@ Feel free to submit PRs to add support for other inverters.
 | --- | --- | --- |
 | 1 | RS485 B- | Orange/White |
 | 2 | RS485 A+ | Orange |
+| 5 | RS485 Ground (recommended) | Blue/White | 
 
+* Terminating resistor is important on the RS485 module side
+* Ground connection is optional but improves reliability.
+With both in place, 50 sensors can be polled at 5s interval without modbus errors.
 
 # Software Requirements
 
@@ -59,3 +63,9 @@ Misc values |  More Values
 :-------------------------:|:-------------------------:
 ![Example Data Values](readme/ha-overview-example1.png) | ![Example Data Values](readme/ha-overview-example4.png)
 
+# References
+
+* Modbus in ESPHome
+   * https://esphome.io/components/modbus_controller/
+   * https://esphome.io/components/sensor/
+* 
