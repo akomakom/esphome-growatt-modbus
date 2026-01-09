@@ -7,6 +7,7 @@ substitutions:
   polling_rate: "10s"  
   # For today and lifetime counters, only update every n+1 iterations
   # To reduce modbus load (these values don't change frequently)
+  # EG 5 == 60s
   skip_count_for_counters: 5 
   # Same for temperature sensors, values tend not to change that frequently
   skip_count_for_temperature: 5
@@ -262,6 +263,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
@@ -302,6 +304,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
@@ -349,7 +352,14 @@ sensor:
     skip_updates: ${skip_count_for_temperature}
     filters:
       - multiply: 0.1
-
+      - clamp:
+          min_value: -40
+          max_value: 200
+          ignore_out_of_range: true
+      - median:  
+          window_size: 3 # Ignore zero in 11, 0, 11 sequence
+      - delta: 0.5 # tune out jitter to save storage.
+          
   # IPM Temperature (Address 94)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
@@ -363,6 +373,13 @@ sensor:
     skip_updates: ${skip_count_for_temperature}
     filters:
       - multiply: 0.1
+      - clamp:
+          min_value: -40
+          max_value: 200
+          ignore_out_of_range: true
+      - median:  
+          window_size: 3 # Ignore zero in 11, 0, 11 sequence
+      - delta: 0.5 # tune out jitter to save storage.
 
   # Boost Temperature (Address 95)
   - platform: modbus_controller
@@ -377,6 +394,13 @@ sensor:
     skip_updates: ${skip_count_for_temperature}
     filters:
       - multiply: 0.1
+      - clamp:
+          min_value: -40
+          max_value: 200
+          ignore_out_of_range: true
+      - median:  
+          window_size: 3 # Ignore zero in 11, 0, 11 sequence
+      - delta: 0.5 # tune out jitter to save storage.          
 
 # ============================================
 # BATTERY
@@ -392,6 +416,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    accuracy_decimals: 1
     filters:
       - multiply: 0.1
       # Reject spurious values from Modbus errors, sometimes reads >5k
@@ -417,6 +442,9 @@ sensor:
           min_value: 0
           max_value: 100
           ignore_out_of_range: true
+      - median:  
+          window_size: 3 # Ignore 54%, 0%, 54% sequence for bad readings:
+      - delta: 0.5 # tune out jitter to save storage.
 
   # Battery Discharge Power (Address 1009-1010)
   - platform: modbus_controller
@@ -470,7 +498,14 @@ sensor:
     skip_updates: ${skip_count_for_temperature}
     filters:
       - multiply: 0.1
-
+        # Reject spurious values from Modbus errors, sometimes reads >2000F
+      - clamp:
+          min_value: -40
+          max_value: 200
+          ignore_out_of_range: true     
+      - median:  
+          window_size: 3 # Ignore zero in 11, 0, 11 sequence
+      - delta: 0.5 # tune out jitter to save storage.
 # ============================================
 # GRID CT - IMPORT POWER (Pactouser)
 # ============================================
