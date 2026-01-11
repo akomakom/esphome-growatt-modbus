@@ -973,7 +973,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1143
-    name: "Self Consumption Energy Total"
+    name: "Total Self Consumption"
     id: self_consumption_total
     register_type: read
     value_type: U_DWORD

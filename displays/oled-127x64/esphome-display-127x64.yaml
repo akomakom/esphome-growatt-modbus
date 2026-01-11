@@ -1,0 +1,119 @@
+# Displays 
+
+# 1. Setup I2C Communication
+i2c:
+  sda: 4
+  scl: 5
+  scan: true
+
+# 1. Define the Icons (ESPHome downloads these automatically)
+image:
+  - file: "mdi:white-balance-sunny"
+    id: icon_solar
+    type: BINARY      # <--- This is the missing required line
+    resize: 20x20
+    
+  - file: "mdi:home-lightning-bolt"
+    id: icon_house
+    type: BINARY      # <--- Added here too
+    resize: 20x20
+    
+  - file: "mdi:battery"
+    id: icon_battery
+    type: BINARY
+    resize: 20x20
+    
+  - file: "mdi:battery-positive"
+    id: icon_battery_charging
+    type: BINARY
+    resize: 20x20
+    
+  - file: "mdi:battery-negative"
+    id: icon_battery_discharging
+    type: BINARY
+    resize: 20x20
+
+font:
+  - file: "gfonts://Noto Sans"
+    id: font_small
+    size: 14
+  - file: "gfonts://Noto Sans"
+    id: font_large
+    size: 34  # Large SOC readout
+
+# 1. Add Global Variable to track the last update time (in milliseconds)
+globals:
+  - id: last_update_time
+    type: uint32_t
+    initial_value: '0'
+
+# 2. Update the sensors to 'ping' the global variable on every new value
+sensor:
+  - platform: homeassistant
+    entity_id: sensor.esphome_solar_1_battery_soc
+    id: ha_battery_soc
+    on_value:
+      then:
+        - lambda: 'id(last_update_time) = millis();'
+  - platform: homeassistant
+    entity_id: sensor.esphome_solar_1_house_load_power
+    id: ha_house_load
+    on_value:
+      then:
+        - lambda: 'id(last_update_time) = millis();'
+  - platform: homeassistant
+    entity_id: sensor.esphome_solar_1_pv_input_power
+    id: ha_pv_power
+    on_value:
+      then:
+        - lambda: 'id(last_update_time) = millis();'
+  - platform: homeassistant
+    entity_id: sensor.esphome_solar_1_battery_power_net
+    id: ha_battery_power_net
+    on_value:
+      then:
+        - lambda: 'id(last_update_time) = millis();'
+
+# 3. Display Logic
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    address: 0x3C
+    lambda: |-
+      uint32_t now_ms = millis();
+      bool is_stale = (now_ms - id(last_update_time) > 60000);
+      bool has_data = id(ha_battery_soc).has_state();
+
+      if (!has_data) {
+        it.printf(64, 32, id(font_small), TextAlign::CENTER, "Connecting...");
+        return;
+      }
+
+      // --- Top Left: PV Power ---
+      it.image(0, 0, id(icon_solar));
+      it.printf(22, 0, id(font_small), TextAlign::TOP_LEFT, "%.0fW", id(ha_pv_power).state);
+
+      // --- Middle Right: Large SOC ---
+      // Choose battery icon based on net power (positive = charging, negative = discharging, zero = idle)
+      if (id(ha_battery_power_net).has_state()) {
+        float net_power = id(ha_battery_power_net).state;
+        if (net_power > 0) {
+          it.image(107, 0, id(icon_battery_charging));
+        } else if (net_power < 0) {
+          it.image(107, 0, id(icon_battery_discharging));
+        } else {
+          it.image(107, 0, id(icon_battery));
+        }
+      } else {
+        it.image(107, 0, id(icon_battery));
+      }
+      it.printf(127, 33, id(font_large), TextAlign::CENTER_RIGHT, "%.0f%%", id(ha_battery_soc).state);
+
+      // --- Bottom Left: House Power ---
+      it.image(0, 48, id(icon_house));
+      it.printf(22, 48, id(font_small), TextAlign::TOP_LEFT, "%.0fW", id(ha_house_load).state);
+
+      // --- Staleness Indicator ---
+      if (is_stale) {
+        it.print(64, 0, id(font_small), TextAlign::TOP_CENTER, "OFFLINE");
+      }
