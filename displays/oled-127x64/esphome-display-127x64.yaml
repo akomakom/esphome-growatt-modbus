@@ -91,7 +91,11 @@ display:
 
       // --- Top Left: PV Power ---
       it.image(0, 0, id(icon_solar));
-      it.printf(22, 0, id(font_small), TextAlign::TOP_LEFT, "%.0fW", id(ha_pv_power).state);
+      if (id(ha_pv_power).state < 1000) {
+        it.printf(22, 0, id(font_small), TextAlign::TOP_LEFT, "%.0fW", id(ha_pv_power).state);
+      } else {
+        it.printf(22, 0, id(font_small), TextAlign::TOP_LEFT, "%.1fkW", id(ha_pv_power).state / 1000.0);
+      }
 
       // --- Middle Right: Large SOC ---
       // Choose battery icon based on net power (positive = charging, negative = discharging, zero = idle)
@@ -107,11 +111,27 @@ display:
       } else {
         it.image(107, 0, id(icon_battery));
       }
+
+      // --- Middle Left: battery net
+          // --- Top Right: Battery Net Power (in kW) with icon ---
+      if (id(ha_battery_power_net).has_state()) {
+        float net_power_kw = id(ha_battery_power_net).state / 1000.0;
+        // Display signed value with 1 decimal place, followed by battery icon
+        it.printf(45, 33, id(font_small), TextAlign::CENTER_RIGHT, "%+.1f", net_power_kw);
+      } else {
+        // ?
+      }
+
+
       it.printf(127, 33, id(font_large), TextAlign::CENTER_RIGHT, "%.0f%%", id(ha_battery_soc).state);
 
       // --- Bottom Left: House Power ---
       it.image(0, 48, id(icon_house));
-      it.printf(22, 48, id(font_small), TextAlign::TOP_LEFT, "%.0fW", id(ha_house_load).state);
+      if (id(ha_house_load).state < 1000) {
+        it.printf(22, 48, id(font_small), TextAlign::TOP_LEFT, "%.0fW", id(ha_house_load).state);
+      } else {
+        it.printf(22, 48, id(font_small), TextAlign::TOP_LEFT, "%.1fkW", id(ha_house_load).state / 1000.0);
+      }
 
       // --- Staleness Indicator ---
       if (is_stale) {
