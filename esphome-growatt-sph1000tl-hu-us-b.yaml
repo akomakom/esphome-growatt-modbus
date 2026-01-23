@@ -228,7 +228,8 @@ sensor:
     name: "AC Output Power"
     id: ac_output_power
     register_type: read
-    value_type: U_DWORD
+    #value_type: U_DWORD  # shows 6554w when running on grid (battery at min SOC limit)
+    value_type: S_DWORD # testing, 65535 may be a negative value when on grid
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
@@ -236,9 +237,52 @@ sensor:
       - multiply: 0.1
         # Reject spurious values from Modbus errors, sometimes reads >400 million
       - clamp:
-          min_value: 0
+          min_value: -10000
           max_value: 20000
           ignore_out_of_range: true
+
+  # Grid Voltage L1 (Address 38)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1068
+    name: "AC Output Voltage L1"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+
+
+  # Grid Voltage L1 (Address 38)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1072
+    name: "AC Output Voltage L2"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+
+  # Grid Frequency (Address 37)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1067
+    name: "AC Output Frequency"
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "Hz"
+    device_class: frequency
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.01
 
   # Grid Frequency (Address 37)
   - platform: modbus_controller
@@ -250,6 +294,7 @@ sensor:
     unit_of_measurement: "Hz"
     device_class: frequency
     state_class: measurement
+    accuracy_decimals: 1
     filters:
       - multiply: 0.01
 
@@ -484,6 +529,22 @@ sensor:
           max_value: 20000
           ignore_out_of_range: true    
 
+
+  # Battery Current (Address 1088)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1088
+    name: "Battery Current"
+    id: battery_current
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "A"
+    device_class: current
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+
   # Battery Temperature (Address 1039-1040)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
@@ -550,13 +611,15 @@ sensor:
           max_value: 100000
           ignore_out_of_range: true          
 
-  # Total Grid Import Power (Address 1021-1022)
-  ##  This one is always zero, so using Grid Import Power (calculated)
+  ############## Removing: always 0 in my case
+  # 
+  # # Total AC Power to User (Address 1021-1022) - Re-enabled with S_DWORD
+  # # This should measure total power delivered to user from all sources
   # - platform: modbus_controller
   #   modbus_controller_id: growatt_sph
   #   address: 1021
-  #   name: "Grid Import Power Total (Modbus)"
-  #   id: grid_import_total
+  #   name: "AC Power to User Total"
+  #   id: ac_power_to_user
   #   register_type: read
   #   value_type: S_DWORD
   #   unit_of_measurement: "W"
@@ -565,10 +628,9 @@ sensor:
   #   accuracy_decimals: 1
   #   filters:
   #     - multiply: 0.1
-  #     # Reject spurious values from Modbus errors, sometimes reads >100m
   #     - clamp:
   #         min_value: 0
-  #         max_value: 100000
+  #         max_value: 15000
   #         ignore_out_of_range: true
 
 # ============================================
@@ -642,7 +704,6 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
-    accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
@@ -656,28 +717,48 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
-    accuracy_decimals: 1
     filters:
       - multiply: 0.1
 
   # Total Inverter to Load (Address 1037-1038)
+  # Note: This register is unreliable during grid-only operation
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1037
     name: "Inverter to Load Power"
+    id: inverter_to_load_power
     register_type: read
     value_type: S_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    filters:
+      - multiply: 0.1
+      - median:
+          window_size: 3  # Smooth transient spikes
+      - clamp:
+          min_value: 0
+          max_value: 20000
+          ignore_out_of_range: true
+
+  # Grid to Load Power (Address 116-117) - Grid power specifically to load
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 116
+    name: "Grid to Load Power"
+    id: grid_to_load_power
+    register_type: read
+    value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
-      # Reject spurious values from Modbus errors, sometimes reads >40k
       - clamp:
           min_value: 0
-          max_value: 20000
-          ignore_out_of_range: true  
+          max_value: 15000
+          ignore_out_of_range: true
 # ============================================
 # CALCULATED SENSORS
 # ============================================
@@ -689,7 +770,6 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
-    accuracy_decimals: 1
     lambda: |-
       float l1 = id(grid_import_l1).state;
       float l2 = id(grid_import_l2).state;
@@ -698,7 +778,7 @@ sensor:
       return l1 + l2;
     update_interval: ${polling_rate}
 
-  # Calculated Grid Export Total (L1 + L2) 
+  # Calculated Grid Export Total (L1 + L2)
   # because the growatt inverter does not provide a total grid import value (always 0)
   - platform: template
     name: "Grid Export Power"
@@ -706,7 +786,6 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
-    accuracy_decimals: 1
     lambda: |-
       float l1 = id(grid_export_l1).state;
       float l2 = id(grid_export_l2).state;
@@ -723,7 +802,6 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
-    accuracy_decimals: 1
     lambda: |-
       float ac_output = id(ac_output_power).state;
       float grid_export = id(grid_export_calculated).state;
@@ -741,7 +819,6 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
-    accuracy_decimals: 1
     lambda: |-
       float import_total = id(grid_import_calculated).state;
       float export_total = id(grid_export_calculated).state;
@@ -757,7 +834,6 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
-    accuracy_decimals: 1
     lambda: |-
       float charge = id(battery_charge_power).state;
       float discharge = id(battery_discharge_power).state;
