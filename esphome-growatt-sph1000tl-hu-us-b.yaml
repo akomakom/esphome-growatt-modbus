@@ -25,7 +25,7 @@ uart:
 modbus:
   id: mod_bus
   uart_id: mod_uart
-  send_wait_time: 20ms  #Reducing  load on modbus to minimize errors
+  send_wait_time: 200ms  # Increased significantly - inverter needs more time between commands
 
 # Modbus Controller
 modbus_controller:
@@ -33,8 +33,9 @@ modbus_controller:
     address: 0x01
     modbus_id: mod_bus
     setup_priority: -10
-    command_throttle: 30ms  # Increased from 30ms to give inverter more time
+    command_throttle: 200ms  # Match send_wait_time for consistency
     update_interval: ${polling_rate}    # See substitutions above
+    offline_skip_updates: 3  # Reduced - allow faster recovery when connection improves
 
 # Text Sensors for Status
 text_sensor:
@@ -374,6 +375,7 @@ sensor:
     name: "Grid Power L2"
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "VA"
     device_class: apparent_power
     state_class: measurement
@@ -390,7 +392,8 @@ sensor:
     address: 93
     name: "Inverter Temperature"
     register_type: read
-    value_type: U_WORD
+    value_type: S_WORD  # Changed from U_WORD to support negative temperatures
+    response_size: 2  # Explicit response size for reliability
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -411,7 +414,8 @@ sensor:
     address: 94
     name: "IPM Temperature"
     register_type: read
-    value_type: U_WORD
+    value_type: S_WORD  # Changed from U_WORD to support negative temperatures
+    response_size: 2  # Explicit response size for reliability
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -432,7 +436,8 @@ sensor:
     address: 95
     name: "Boost Temperature"
     register_type: read
-    value_type: U_WORD
+    value_type: S_WORD  # Changed from U_WORD to support negative temperatures
+    response_size: 2  # Explicit response size for reliability
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -499,6 +504,7 @@ sensor:
     id: battery_discharge_power
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
@@ -518,6 +524,7 @@ sensor:
     id: battery_charge_power
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
@@ -546,27 +553,50 @@ sensor:
       - multiply: 0.1
 
   # Battery Temperature (Address 1039-1040)
+  # This is specific to battery "Ruixu Lithi2-16" set to Growatt Protocol and 
+  #  inverter set to "04"
+  # Inverter reads from battery CAN bus as unsigned, causing negative temps
+  # to appear as large positive values (e.g., -34 becomes 65502)
+  # Hack to convert to signed integers and enforce sane value filters.
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
     address: 1039
     name: "Battery Temperature"
     register_type: read
-    value_type: U_DWORD
+    value_type: U_DWORD  # Read as unsigned to get raw value
+    response_size: 4
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_temperature}
+    lambda: |-
+      uint32_t raw = (uint32_t)x;
+      
+      // If value is in the 16-bit unsigned overflow range (65000-65535),
+      // it's likely a negative temperature misinterpreted as unsigned
+      if (raw >= 65000 && raw <= 65535) {
+        // Convert back to signed 16-bit interpretation
+        int16_t signed_val = (int16_t)(raw & 0xFFFF);
+        float temp = signed_val * 0.1;
+        ESP_LOGD("battery_temp", "Negative temp detected - Raw: %u, Converted: %.1f°C", raw, temp);
+        return temp;
+      }
+      
+      // Normal positive temperature
+      float temp = raw * 0.1;
+      
+      // Validate range
+      if (temp < -40.0 || temp > 200.0) {
+        ESP_LOGW("battery_temp", "Out of range - Raw: %u, Temp: %.1f°C", raw, temp);
+        return {};  // Return empty (Unknown)
+      }
+      
+      return temp;
     filters:
-      - multiply: 0.1
-        # Reject spurious values from Modbus errors, sometimes reads >2000F
-      - clamp:
-          min_value: -40
-          max_value: 200
-          ignore_out_of_range: true     
-      - median:  
-          window_size: 3 # Ignore zero in 11, 0, 11 sequence
-      - delta: 0.5 # tune out jitter to save storage.
+      - median:
+          window_size: 3
+      - delta: 0.5
 # ============================================
 # GRID CT - IMPORT POWER (Pactouser)
 # ============================================
@@ -701,6 +731,7 @@ sensor:
     name: "Inverter to Load L1"
     register_type: read
     value_type: S_DWORD
+    response_size: 4
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
@@ -714,6 +745,7 @@ sensor:
     name: "Inverter to Load L2"
     register_type: read
     value_type: S_DWORD
+    response_size: 4
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
@@ -729,6 +761,7 @@ sensor:
     id: inverter_to_load_power
     register_type: read
     value_type: S_DWORD
+    response_size: 4  # Explicit response size for DWORD reliability
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
@@ -749,6 +782,7 @@ sensor:
     id: grid_to_load_power
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
@@ -913,6 +947,7 @@ sensor:
     name: "Today Grid Export"
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
@@ -928,6 +963,7 @@ sensor:
     name: "Today Battery Charge"
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
@@ -943,6 +979,7 @@ sensor:
     name: "Today Battery Discharge"
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
@@ -962,6 +999,7 @@ sensor:
     name: "Total AC Production"
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
@@ -977,6 +1015,7 @@ sensor:
     name: "Total PV Production"
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
@@ -992,6 +1031,7 @@ sensor:
     name: "Total Grid Import"
     register_type: read
     value_type: U_DWORD
+    response_size: 4
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
