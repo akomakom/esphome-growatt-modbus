@@ -37,10 +37,12 @@ With both in place, 50 sensors can be polled at 5s interval without any modbus e
 # Connections
 
 The `CN4` (Upper Computer) connection is used on the SPH10000TL-HU-US
+
+The USB port intended for software upgrades can be used to power the
+ESPHome device (use a power-only USB cable, not a data cable)
+
 ![connections-sph1000tl-hu-us-b.png](readme/connections-sph1000tl-hu-us-b.png)
 
-The USB port intended for software upgrades can be used to power the 
-ESPHome device (use a power-only USB cable, not a data cable)
 
 # Software Requirements
 
@@ -66,9 +68,9 @@ ESPHome device (use a power-only USB cable, not a data cable)
 Manually Created Dashboard
 ![Example Visualization](readme/ha-graphs-example1.png)
 
-Misc values |  More Values
-:-------------------------:|:-------------------------:
-![Example Data Values](readme/ha-overview-example1.png) | ![Example Data Values](readme/ha-overview-example4.png)
+|                       Misc values                       |                       More Values                       |
+|:-------------------------------------------------------:|:-------------------------------------------------------:|
+| ![Example Data Values](readme/ha-overview-example1.png) | ![Example Data Values](readme/ha-overview-example4.png) |
 
 # References
 
