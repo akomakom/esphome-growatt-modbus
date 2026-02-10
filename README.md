@@ -18,7 +18,7 @@ Feel free to submit PRs to add support for other inverters.
 
 * Currently only tested with the Growatt `SPH 10000TL-HU-US-B` running HMI Version `SK110.04-08051`
 * A Microcontroller like an `ESP32`.
-   (I used a generic `ESP32-C6`, but custom devices like LilyGO T-CAN485 may be simpler.  There are also DIN rail mount packaged units - search "DIN rail ESP32 RS485").  If your device is in a junction box, adding an external antenna is helpful (most ESP32 devices are easily solder-modded for an external SMA antenna)
+   (I used a generic `ESP32-C6`, but custom devices like LilyGO T-CAN485 may be simpler.  There are also DIN rail mount packaged units - search "DIN rail ESP32 RS485").  If your device is in a junction box, adding an external antenna may be helpful (most ESP32 devices are easily solder-modded for an external SMA antenna)
 * A separate RS485 module for the microcontroller (If not built-in).  I used a HiLetgo TTL to RS485 because it works at 3.3v like the ESP32.  It's connected via 4 pins (UART): TX (6), RX (7), GND, VCC (see yaml)
 * A sacrificial ethernet cable, cut in half (pinout below), connected to the RS485 module.
 
@@ -33,6 +33,14 @@ Feel free to submit PRs to add support for other inverters.
 * Terminating resistor is important on the RS485 module side
 * Ground connection is optional but improves reliability.
 With both in place, 50 sensors can be polled at 5s interval without any modbus errors.
+
+# Connections
+
+The `CN4` (Upper Computer) connection is used on the SPH10000TL-HU-US
+![connections-sph1000tl-hu-us-b.png](readme/connections-sph1000tl-hu-us-b.png)
+
+The USB port intended for software upgrades can be used to power the 
+ESPHome device (use a power-only USB cable, not a data cable)
 
 # Software Requirements
 
