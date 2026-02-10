@@ -36,7 +36,7 @@ With both in place, 50 sensors can be polled at 5s interval without any modbus e
 
 # Connections
 
-The `CN4` (Upper Computer) connection is used on the SPH10000TL-HU-US
+The `CN5` (Upper Computer) connection is used on the SPH10000TL-HU-US
 
 The USB port intended for software upgrades can be used to power the
 ESPHome device (use a power-only USB cable, not a data cable)
