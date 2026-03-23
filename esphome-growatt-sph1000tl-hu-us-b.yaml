@@ -4,13 +4,15 @@
 
 substitutions:
   # Sensor update_interval for most sensors: 
-  polling_rate: "10s"  
+  polling_rate: "5s"  
   # For today and lifetime counters, only update every n+1 iterations
   # To reduce modbus load (these values don't change frequently)
   # EG 5 == 60s
-  skip_count_for_counters: 5 
+  skip_count_for_counters: 10 
   # Same for temperature sensors, values tend not to change that frequently
-  skip_count_for_temperature: 5
+  skip_count_for_temperature: 10
+  # Values not often referenced or looked at in real-time.
+  skip_count_for_less_used: 3
 
 # UART Configuration for RS485.  SPH 10000TL-HU-US uses 115200 baud
 # Change pins for your wiring setup
@@ -20,6 +22,7 @@ uart:
   rx_pin: GPIO7
   baud_rate: 115200
   stop_bits: 1
+  rx_buffer_size: 512
 
 # Modbus Configuration
 modbus:
@@ -108,6 +111,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     filters:
       - multiply: 0.1
 
@@ -121,6 +125,7 @@ sensor:
     unit_of_measurement: "A"
     device_class: current
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
@@ -134,6 +139,7 @@ sensor:
     value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     filters:
       - multiply: 0.1
@@ -147,6 +153,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "V"
     device_class: voltage
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     filters:
       - multiply: 0.1
@@ -160,6 +167,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "A"
     device_class: current
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     accuracy_decimals: 1
     filters:
@@ -174,6 +182,7 @@ sensor:
     value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     filters:
       - multiply: 0.1
@@ -187,6 +196,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "V"
     device_class: voltage
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     filters:
       - multiply: 0.1
@@ -200,6 +210,7 @@ sensor:
     value_type: U_WORD
     unit_of_measurement: "A"
     device_class: current
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     accuracy_decimals: 1
     filters:
@@ -214,6 +225,7 @@ sensor:
     value_type: U_DWORD
     unit_of_measurement: "W"
     device_class: power
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     filters:
       - multiply: 0.1
@@ -252,6 +264,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
@@ -267,6 +280,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
@@ -281,6 +295,7 @@ sensor:
     unit_of_measurement: "Hz"
     device_class: frequency
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.01
@@ -295,6 +310,7 @@ sensor:
     unit_of_measurement: "Hz"
     device_class: frequency
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.01
@@ -309,6 +325,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
@@ -323,6 +340,7 @@ sensor:
     unit_of_measurement: "A"
     device_class: current
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
@@ -337,6 +355,7 @@ sensor:
     unit_of_measurement: "VA"
     device_class: apparent_power
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     filters:
       - multiply: 0.1
 
@@ -350,6 +369,7 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
@@ -364,6 +384,7 @@ sensor:
     unit_of_measurement: "A"
     device_class: current
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
@@ -378,6 +399,7 @@ sensor:
     response_size: 4
     unit_of_measurement: "VA"
     device_class: apparent_power
+    skip_updates: ${skip_count_for_less_used}
     state_class: measurement
     filters:
       - multiply: 0.1
@@ -597,6 +619,7 @@ sensor:
       - median:
           window_size: 3
       - delta: 0.5
+
 # ============================================
 # GRID CT - IMPORT POWER (Pactouser)
 # ============================================
@@ -735,6 +758,7 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     filters:
       - multiply: 0.1
 
@@ -749,6 +773,7 @@ sensor:
     unit_of_measurement: "W"
     device_class: power
     state_class: measurement
+    skip_updates: ${skip_count_for_less_used}
     filters:
       - multiply: 0.1
 
@@ -1096,6 +1121,7 @@ sensor:
     unit_of_measurement: "kWh"
     device_class: energy
     state_class: total_increasing
+    skip_updates: ${skip_count_for_counters}
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
