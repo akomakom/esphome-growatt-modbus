@@ -40,67 +40,6 @@ modbus_controller:
     update_interval: ${polling_rate}    # See substitutions above
     offline_skip_updates: 3  # Reduced - allow faster recovery when connection improves
 
-# Define SPI for the MCP2515 (CAN A)
-# Maintain your existing SPI and UART configs
-# Maintain your existing SPI and UART configs
-spi:
-  clk_pin: GPIO12
-  mosi_pin: GPIO11
-  miso_pin: GPIO13
-
-canbus:
-  # CAN B - Connected to Inverter (Native ESP32 TWAI)
-  - platform: esp32_can
-    id: can_inverter
-    can_id: 0x01
-    tx_pin: GPIO7
-    rx_pin: GPIO6
-    bit_rate: 500kbps
-    on_frame:
-      - can_id: 0x000
-        can_id_mask: 0x000
-        then:
-          - lambda: |-
-              id(can_battery).send_data(frame.can_id, frame.use_extended_id, frame.data);
-
-  # CAN A - Connected to Battery (MCP2515 via SPI)
-  - platform: mcp2515
-    id: can_battery
-    can_id: 0x02
-    bit_rate: 500kbps
-    cs_pin: GPIO10
-    clock: 16MHZ
-    on_frame:
-      - can_id: 0x000
-        can_id_mask: 0x000
-        then:
-          - lambda: |-
-              if (frame.can_id == 0x351) {
-                float original = (float)((frame.data[3] << 8) | frame.data[2]) / 10.0;
-                id(original_charge_rate).publish_state(original);
-
-                uint16_t new_limit = (uint16_t)(id(ha_charge_limit).state * 10);
-                frame.data[2] = new_limit & 0xFF;
-                frame.data[3] = (new_limit >> 8) & 0xFF;
-                
-                ESP_LOGD("CAN_MITM", "Intercepted 0x351: Original %fA, Sent %fA", original, id(ha_charge_limit).state);
-              }
-              id(can_inverter).send_data(frame.can_id, frame.use_extended_id, frame.data);
-
-number:
-  - platform: template
-    name: "Inverter Charge Limit"
-    id: ha_charge_limit
-    icon: "mdi:speedometer"
-    unit_of_measurement: "A"
-    min_value: 0
-    max_value: 100
-    step: 1
-    initial_value: 80
-    restore_value: true
-    optimistic: true
-
-
 # For LilyGo T-2CAN, this may be necessary to power the modbus connector
 switch:
   - platform: gpio
@@ -128,11 +67,6 @@ text_sensor:
       }
 
 sensor:
-  - platform: template
-    name: "Battery Requested Charge Rate"
-    id: original_charge_rate
-    unit_of_measurement: "A"
-    accuracy_decimals: 1
 # ============================================
 # INVERTER STATUS & OPERATION
 # ============================================
