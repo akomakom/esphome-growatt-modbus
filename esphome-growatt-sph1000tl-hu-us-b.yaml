@@ -18,17 +18,17 @@ substitutions:
 # Change pins for your wiring setup
 uart:
   id: mod_uart
-  tx_pin: GPIO6
-  rx_pin: GPIO7
+  tx_pin: GPIO1
+  rx_pin: GPIO2
   baud_rate: 115200
   stop_bits: 1
-  rx_buffer_size: 512
+  rx_buffer_size: 256
 
 # Modbus Configuration
 modbus:
   id: mod_bus
   uart_id: mod_uart
-  send_wait_time: 200ms  # Increased significantly - inverter needs more time between commands
+  send_wait_time: 100ms  # Increased significantly - inverter needs more time between commands
 
 # Modbus Controller
 modbus_controller:
@@ -36,9 +36,17 @@ modbus_controller:
     address: 0x01
     modbus_id: mod_bus
     setup_priority: -10
-    command_throttle: 200ms  # Match send_wait_time for consistency
+    command_throttle: 50ms  # Match send_wait_time for consistency
     update_interval: ${polling_rate}    # See substitutions above
     offline_skip_updates: 3  # Reduced - allow faster recovery when connection improves
+
+# For LilyGo T-2CAN, this may be necessary to power the modbus connector
+switch:
+  - platform: gpio
+    pin: GPIO15
+    id: board_power
+    name: "Board Power"
+    restore_mode: ALWAYS_ON
 
 # Text Sensors for Status
 text_sensor:
