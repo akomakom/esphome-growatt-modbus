@@ -2,6 +2,16 @@
 # Append this to your esphome yaml file in ESPHome Builder:
 ##############################################
 
+# NOTE : add this under esphome:
+  # on_boot:
+  #   # 1000.0 is the absolute highest priority. 
+  #   # We want to turn on power before the SPI bus even tries to look for a chip.
+  #   priority: 1000.0
+  #   then:
+  #     - output.turn_on: can_power_en
+  #     - delay: 500ms
+  #     - logger.log: "!!! POWER ENABLED BY ON_BOOT !!!"
+
 substitutions:
   # Sensor update_interval for most sensors: 
   polling_rate: "5s"  
@@ -13,6 +23,47 @@ substitutions:
   skip_count_for_temperature: 10
   # Values not often referenced or looked at in real-time.
   skip_count_for_less_used: 3
+
+spi:
+  id: can_spi
+  clk_pin: GPIO12
+  mosi_pin: GPIO11
+  miso_pin: GPIO13
+  # Hardware interface is fine since your board isn't crashing
+  interface: hardware
+
+canbus:
+  # CAN B - Connected to Inverter (Native ESP32 TWAI)
+  - platform: esp32_can
+    id: internal_can
+    can_id: 0x100
+    tx_pin: GPIO07
+    rx_pin: GPIO06
+    bit_rate: 250kbps
+    on_frame:
+      - can_id: 0x200 # 监听来自 MCP2515 的数据
+        then:
+          - lambda: |-
+              id(rx_display_internal).publish_state("From MCP: " + format_hex_pretty(x));
+              ESP_LOGI("CAN", "Internal CAN receive: %s", format_hex_pretty(x).c_str());
+
+  - platform: mcp2515
+    id: can_battery
+    spi_id: can_spi
+    cs_pin: GPIO10
+    can_id: 0x200
+    clock: 16MHz
+    bit_rate: 250kbps
+    # This is the "Magic" fix: 
+    # Move the MCP2515 setup to the very end of the line.
+    # Default is usually -50 or 0. -1000 ensures it waits for everything.
+    setup_priority: -1000
+    on_frame:
+      - can_id: 0x100 # 监听来自 Internal CAN 的数据
+        then:
+          - lambda: |-
+              id(rx_display_mcp).publish_state("From Internal: " + format_hex_pretty(x));
+              ESP_LOGI("CAN", "MCP2515 receive: %s", format_hex_pretty(x).c_str());
 
 # UART Configuration for RS485.  SPH 10000TL-HU-US uses 115200 baud
 # Change pins for your wiring setup
@@ -40,13 +91,6 @@ modbus_controller:
     update_interval: ${polling_rate}    # See substitutions above
     offline_skip_updates: 3  # Reduced - allow faster recovery when connection improves
 
-# For LilyGo T-2CAN, this may be necessary to power the modbus connector
-switch:
-  - platform: gpio
-    pin: GPIO15
-    id: board_power
-    name: "Board Power"
-    restore_mode: ALWAYS_ON
 
 # Text Sensors for Status
 text_sensor:
@@ -65,6 +109,39 @@ text_sensor:
         case 3: return std::string("Fault");
         default: return std::string("Unknown");
       }
+  - platform: template
+    name: "Internal CAN Rx Status"
+    id: rx_display_internal
+  - platform: template
+    name: "MCP2515 Rx Status"
+    id: rx_display_mcp
+
+# 控制按钮：用于触发发送
+button:
+  - platform: template
+    name: "Send: Internal -> MCP"
+    icon: "mdi:arrow-right-bold"
+    on_press:
+      - canbus.send:
+          canbus_id: internal_can
+          can_id: 0x100
+          data: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+
+  - platform: template
+    name: "Send: MCP -> Internal"
+    icon: "mdi:arrow-left-bold"
+    on_press:
+      - canbus.send:
+          canbus_id: can_battery
+          can_id: 0x200
+          data: [0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
+
+
+
+output:
+  - platform: gpio
+    pin: GPIO15
+    id: can_power_en
 
 sensor:
 # ============================================
