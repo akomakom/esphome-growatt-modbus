@@ -9,8 +9,12 @@
   #   priority: 1000.0
   #   then:
   #     - output.turn_on: can_power_en
-  #     - delay: 500ms
-  #     - logger.log: "!!! POWER ENABLED BY ON_BOOT !!!"
+  #     - delay: 1000ms # Give the LDO more time
+  #     # - output.turn_off: mcp_rst_pin # Pull Reset Low
+  #     # - delay: 100ms
+  #     # - output.turn_on: mcp_rst_pin  # Release Reset
+  #     # - delay: 500ms
+  #     - logger.log: "=== HARDWARE RESET COMPLETE ==="
 
 substitutions:
   # Sensor update_interval for most sensors: 
