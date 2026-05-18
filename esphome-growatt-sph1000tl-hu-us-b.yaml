@@ -40,10 +40,10 @@ modbus_controller:
     update_interval: ${polling_rate}    # See substitutions above
     offline_skip_updates: 3  # Reduced - allow faster recovery when connection improves
 
-# Allow time setting from Home Assistant on the inverter
+####  Allow time setting from Home Assistant on the inverter ###
 # Inverter does not support DST adjustment internally.
 # Expose a simple number slider component to Home Assistant
-# Example automation:
+# Example automation (correct entity_id for your system):
   # alias: "Solar: Sync Growatt Inverter Time"
   # description: Pokes the ESPHome template number to trigger a local clock sync.
   # triggers:
@@ -59,7 +59,10 @@ modbus_controller:
   #     target:
   #       entity_id: number.growatt_growatt_time_sync_trigger
   # mode: single
-
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: "EST5EDT,M3.2.0,M11.1.0"
 number:
   - platform: template
     name: "Growatt Time Sync Trigger"
@@ -68,15 +71,13 @@ number:
     min_value: 0
     max_value: 23
     step: 1
-    # When Home Assistant updates this number, execute the Modbus write immediately
     on_value:
       then:
         - lambda: |-
             auto time_now = id(sntp_time).now();
             
             if (!time_now.is_valid()) {
-              ESP_LOGW("growatt_modbus", "SNTP Time is invalid. Aborting Modbus write.");
-              return;
+              return; // Silently exit if SNTP isn't ready yet
             }
 
             uint16_t yy = (uint16_t)(time_now.year % 100);
@@ -86,22 +87,21 @@ number:
             uint16_t min = (uint16_t)time_now.minute;
             uint16_t ss = (uint16_t)time_now.second;
 
-            ESP_LOGI("growatt_modbus", "Executing Sequential Clock Force (FC 06)...");
+            // Retaining a single, clean production log entry
+            ESP_LOGI("growatt_time", "Automated clock sync executed successfully.");
 
             auto *controller = id(growatt_sph);
             using esphome::modbus_controller::ModbusCommandItem;
 
-            // Write 1-5: Stage date and time parameters into the buffer registers
+            // Stage buffers
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 45, yy));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 46, mm));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 47, dd));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 48, hh));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 49, min));
             
-            // Write 6: Write Seconds LAST. This acts as the internal latch execution signal.
+            // Latch execution signal
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 50, ss));
-            
-            ESP_LOGI("growatt_modbus", "All sequential time commands pushed to bus.");
 
 # For LilyGo T-2CAN, this may be necessary to power the modbus connector
 switch:
