@@ -40,29 +40,13 @@ modbus_controller:
     update_interval: ${polling_rate}    # See substitutions above
     offline_skip_updates: 3  # Reduced - allow faster recovery when connection improves
 
-####  Allow time setting from Home Assistant on the inverter ###
-# Inverter does not support DST adjustment internally.
-# Expose a simple number slider component to Home Assistant
-# Example automation (correct entity_id for your system):
-  # alias: "Solar: Sync Growatt Inverter Time"
-  # description: Pokes the ESPHome template number to trigger a local clock sync.
-  # triggers:
-  #   - at: "02:00:00"
-  #     trigger: time
-  #   - event: start
-  #     trigger: homeassistant
-  # conditions: []
-  # actions:
-  #   - data:
-  #       value: "{{ now().strftime('%H') | int }}"
-  #     action: number.set_value
-  #     target:
-  #       entity_id: number.growatt_growatt_time_sync_trigger
-  # mode: single
+# Enable standard time tracking so the ESP32 knows the exact date/time natively
 time:
   - platform: sntp
     id: sntp_time
-    timezone: "EST5EDT,M3.2.0,M11.1.0"
+    timezone: "EST5EDT,M3.2.0,M11.1.0" # Adjust this to your local timezone string
+
+# Expose a simple number slider component to Home Assistant
 number:
   - platform: template
     name: "Growatt Time Sync Trigger"
@@ -71,13 +55,15 @@ number:
     min_value: 0
     max_value: 23
     step: 1
+    # When Home Assistant updates this number, execute the Modbus write immediately
     on_value:
       then:
         - lambda: |-
             auto time_now = id(sntp_time).now();
             
             if (!time_now.is_valid()) {
-              return; // Silently exit if SNTP isn't ready yet
+              ESP_LOGW("growatt_modbus", "SNTP Time is invalid. Aborting Modbus write.");
+              return;
             }
 
             uint16_t yy = (uint16_t)(time_now.year % 100);
@@ -87,21 +73,22 @@ number:
             uint16_t min = (uint16_t)time_now.minute;
             uint16_t ss = (uint16_t)time_now.second;
 
-            // Retaining a single, clean production log entry
-            ESP_LOGI("growatt_time", "Automated clock sync executed successfully.");
+            ESP_LOGI("growatt_modbus", "Executing Sequential Clock Force (FC 06)...");
 
             auto *controller = id(growatt_sph);
             using esphome::modbus_controller::ModbusCommandItem;
 
-            // Stage buffers
+            // Write 1-5: Stage date and time parameters into the buffer registers
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 45, yy));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 46, mm));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 47, dd));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 48, hh));
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 49, min));
             
-            // Latch execution signal
+            // Write 6: Write Seconds LAST. This acts as the internal latch execution signal.
             controller->queue_command(ModbusCommandItem::create_write_single_command(controller, 50, ss));
+            
+            ESP_LOGI("growatt_modbus", "All sequential time commands pushed to bus.");
 
 # For LilyGo T-2CAN, this may be necessary to power the modbus connector
 switch:
@@ -121,13 +108,27 @@ text_sensor:
     register_type: read
     raw_encode: HEXBYTES
     lambda: |-
-      uint16_t value = modbus_controller::word_from_hex_str(x, 0);
+      uint16_t value = modbus::helpers::word_from_hex_str(x, 0);
       switch(value) {
         case 0: return std::string("Waiting");
         case 1: return std::string("Normal");
         case 3: return std::string("Fault");
         default: return std::string("Unknown");
       }
+
+
+# Define your anchor once near the top
+.outlier_lambda: &outlier_lambda
+  lambda: |-
+    static float last_valid = NAN;
+    // ESP_LOGW("filter", "Last value: %0.0f, New value %0.0f", last_valid, x);
+    if (!isnan(last_valid) && last_valid > 0.0f && x > last_valid * 1000.0f) {
+      ESP_LOGW("filter", "Rejected extreme outlier spike! Current: %.1f, New: %.1f", 
+              last_valid, x);
+      return {};  // reject: >1000x jump is a glitch, not real data
+    }
+    last_valid = x;
+    return x;    
 
 sensor:
 # ============================================
@@ -1150,6 +1151,7 @@ sensor:
     skip_updates: ${skip_count_for_counters}
     filters:
       - multiply: 0.1
+      - <<: *outlier_lambda
 
   # Total Battery Charge (Address 1058-1059)
   - platform: modbus_controller
@@ -1165,6 +1167,7 @@ sensor:
     skip_updates: ${skip_count_for_counters}
     filters:
       - multiply: 0.1
+      - <<: *outlier_lambda
 
   # Total Battery Discharge (Address 1054-1055)
   - platform: modbus_controller
@@ -1180,6 +1183,7 @@ sensor:
     skip_updates: ${skip_count_for_counters}
     filters:
       - multiply: 0.1
+      - <<: *outlier_lambda
 
   # Self Consumption Energy Total (Address 1143-1144)
   - platform: modbus_controller
@@ -1196,6 +1200,7 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.1
+      - <<: *outlier_lambda
 
 # ============================================
 # PV STRING ENERGY COUNTERS (Optional)
