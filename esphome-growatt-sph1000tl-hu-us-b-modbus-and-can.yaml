@@ -17,12 +17,12 @@
   #     - logger.log: "=== HARDWARE RESET COMPLETE ==="
 
 substitutions:
-  # Sensor update_interval for most sensors: 
-  polling_rate: "5s"  
+  # Sensor update_interval for most sensors:
+  polling_rate: "5s"
   # For today and lifetime counters, only update every n+1 iterations
   # To reduce modbus load (these values don't change frequently)
-  # EG 5 == 60s
-  skip_count_for_counters: 10 
+  # EG 10 == 55s (10 skips + 1 read = 11 cycles * 5s)
+  skip_count_for_counters: 10
   # Same for temperature sensors, values tend not to change that frequently
   skip_count_for_temperature: 10
   # Values not often referenced or looked at in real-time.
@@ -159,7 +159,15 @@ sensor:
     name: "Inverter Status Code"
     id: inverter_status_code
     register_type: read
+  # Inverter Current Hour (Address 48) - for time sync verification
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 48
+    name: "Inverter Current Hour"
+    id: inverter_current_hour
+    register_type: holding
     value_type: U_WORD
+    skip_updates: ${skip_count_for_counters}
 
   # Power Factor (Address 100)
   - platform: modbus_controller
