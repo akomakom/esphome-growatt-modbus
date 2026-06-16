@@ -1,0 +1,331 @@
+
+# Append this to your esphome yaml.
+##############################################################################
+# CANipulator MitM — Growatt TL10000 HU US B ↔ Ruixu Lithi2-16 (or similar)
+# Uses a dual-canbus device that sits between the inverter and battery
+# to modify requested charge rate to control charge speed and max SOC
+# 
+# CANipulator GPIO:
+#
+# CAN0 (TWAI0) GPIO16/17 — Growatt inverter
+# CAN1 (TWAI1) GPIO18/19 — Ruixu battery (Growatt/Pylontech protocol)
+#
+# GPIO 0-3 are transceiver STANDBY/SHUTDOWN control lines; all driven LOW.
+#   GPIO0 = CAN0 STANDBY   GPIO1 = CAN1 STANDBY
+#   GPIO2 = CAN1 SHUTDOWN  GPIO3 = CAN0 SHUTDOWN
+#
+# Relay design
+# ────────────
+# All frames pass through in both directions in real time.
+# The ONLY modification: 0x351 from battery (charge/discharge limits) has its
+# max-charge-current field (bytes 2-3, uint16 LE, 0.1 A/bit) optionally
+# clamped down when Home Assistant has provided a fresh limit.  The frame is
+# NEVER modified to a value higher than what the battery requests, and is
+# passed unchanged when:
+#   • HA has not sent a limit, or
+#   • HA has been disconnected
+#
+# NOTE on dual-TWAI support
+# ─────────────────────────
+# ESPHome allocates TWAI0 to the first esp32_can entry and TWAI1 to the second.
+# This is automatic on ESP32-C6.  Verify with ESPHome 2026.5+ that the
+# esp32_can component exposes a `controller` key if you ever need to override
+# the assignment order.
+##############################################################################
+
+substitutions:
+  device_name: canipulator
+  friendly_name: "CANipulator MitM"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+
+  on_boot:
+    # Drive transceiver control pins LOW before CAN controllers start (priority
+    # 800 runs before most component initialisation at 600).
+    priority: 800
+    then:
+      - output.turn_off: pin_can0_standby
+      - output.turn_off: pin_can0_shutdown
+      - output.turn_off: pin_can1_standby
+      - output.turn_off: pin_can1_shutdown
+
+esp32:
+  board: esp32-c6-devkitc-1
+  variant: esp32c6
+  framework:
+    type: esp-idf
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logger:
+  level: INFO
+  logs:
+    canbus: WARN     # suppress per-frame canbus component noise
+    mitm: INFO       # our own tag — periodic stats and limit changes
+
+# ── Home Assistant API ────────────────────────────────────────────────────────
+api:
+  encryption:
+    key: !secret api_key
+  # Do not reboot if HA is unavailable — CAN relaying must continue regardless.
+  reboot_timeout: 0s
+  on_client_disconnected:
+    then:
+      - logger.log:
+          level: WARN
+          tag: mitm
+          format: "HA disconnected — charge-limit override cleared"
+      - globals.set:
+          id: charge_limit_amps
+          value: "-1.0"
+      # charge_limit_amps already reset above; no timestamp to clear
+
+# ── GPIO outputs: transceiver STANDBY / SHUTDOWN ─────────────────────────────
+# All four pins are simply held LOW for normal transceiver operation.
+output:
+  - platform: gpio
+    id: pin_can0_standby    # GPIO0 → CAN0 STANDBY
+    pin: GPIO0
+  - platform: gpio
+    id: pin_can1_standby    # GPIO1 → CAN1 STANDBY
+    pin: GPIO1
+  - platform: gpio
+    id: pin_can1_shutdown   # GPIO2 → CAN1 SHUTDOWN
+    pin: GPIO2
+  - platform: gpio
+    id: pin_can0_shutdown   # GPIO3 → CAN0 SHUTDOWN
+    pin: GPIO3
+
+# ── Globals ───────────────────────────────────────────────────────────────────
+globals:
+  # HA-provided charge-current cap (A).  -1.0 = no override active.
+  - id: charge_limit_amps
+    type: float
+    restore_value: false
+    initial_value: "-1.0"
+
+  # Rolling frame counters — reset every stats interval.
+  - id: cnt_batt_to_inv
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
+  - id: cnt_inv_to_batt
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
+
+# ── CAN buses ─────────────────────────────────────────────────────────────────
+canbus:
+
+  # ── CAN0 / TWAI0: Growatt inverter ─────────────────────────────────────────
+  - platform: esp32_can
+    id: can_inverter
+    rx_pin: GPIO16
+    tx_pin: GPIO17
+    bit_rate: 500kbps
+    can_id: 0x064              # node TX id (required); arbitrary, not used for filtering
+    on_frame:
+      # Catch-all for standard frames (mask 0x000 matches every ID).
+      # Extended-ID frames from the inverter are not expected in the
+      # Growatt/Pylontech protocol; add a second entry with
+      # use_extended_id: true if your inverter uses them.
+      - can_id: 0x000
+        can_id_mask: 0x000
+        use_extended_id: false
+        then:
+          - lambda: |-
+              id(can_battery).send_data(can_id, false, x);
+              id(cnt_inv_to_batt)++;
+
+  # ── CAN1 / TWAI1: Ruixu battery (Growatt/Pylontech protocol) ───────────────
+  - platform: esp32_can
+    id: can_battery
+    rx_pin: GPIO18
+    tx_pin: GPIO19
+    bit_rate: 500kbps
+    can_id: 0x0C8              # node TX id (required); arbitrary, not used for filtering
+    on_frame:
+
+      # ── 0x351: Charge/discharge voltage & current limits ──────────────────
+      # Parse battery's requested max charge current, optionally clamp it, then
+      # forward to inverter.  All other bytes pass unchanged.
+      #
+      # Frame layout (Pylontech/Growatt):
+      #   Bytes 0-1  Charge voltage limit       uint16 LE  0.1 V/bit
+      #   Bytes 2-3  Max charge current          uint16 LE  0.1 A/bit  ← we cap this
+      #   Bytes 4-5  Max discharge current       uint16 LE  0.1 A/bit
+      #   Bytes 6-7  Min discharge voltage       uint16 LE  0.1 V/bit
+      - can_id: 0x351
+        can_id_mask: 0x7FF
+        use_extended_id: false
+        then:
+          - lambda: |-
+              if (x.size() < 8) {
+                id(can_inverter).send_data(can_id, false, x);
+                id(cnt_batt_to_inv)++;
+                return;
+              }
+
+              uint16_t batt_cc_raw  = (uint16_t)x[2] | ((uint16_t)x[3] << 8);
+              float    batt_cc_amps = batt_cc_raw * 0.1f;
+
+              id(sensor_batt_charge_max).publish_state(batt_cc_amps);
+
+              // Apply HA cap if set and below what the battery requests.
+              // Cleared automatically on HA disconnect via on_client_disconnected.
+              std::vector<uint8_t> fwd(x);
+              float cap = id(charge_limit_amps);
+              bool  limit_active = false;
+
+              if (cap >= 0.0f && cap < batt_cc_amps) {
+                uint16_t cap_raw = (uint16_t)(cap * 10.0f);
+                fwd[2] = (uint8_t)(cap_raw & 0xFF);
+                fwd[3] = (uint8_t)(cap_raw >> 8);
+                limit_active = true;
+              }
+
+              if (limit_active) {
+                ESP_LOGD("mitm", "0x351: charge current capped %.1f A → %.1f A",
+                         batt_cc_amps, cap);
+              }
+
+              id(can_inverter).send_data(can_id, false, fwd);
+              id(cnt_batt_to_inv)++;
+
+      # ── 0x355: SOC / SOH ──────────────────────────────────────────────────
+      # Bytes 0-1  SOC  uint16 LE  %
+      # Bytes 2-3  SOH  uint16 LE  %
+      - can_id: 0x355
+        can_id_mask: 0x7FF
+        use_extended_id: false
+        then:
+          - lambda: |-
+              if (x.size() >= 4) {
+                uint16_t soc = (uint16_t)x[0] | ((uint16_t)x[1] << 8);
+                uint16_t soh = (uint16_t)x[2] | ((uint16_t)x[3] << 8);
+                id(sensor_batt_soc).publish_state((float)soc);
+                id(sensor_batt_soh).publish_state((float)soh);
+              }
+              id(can_inverter).send_data(can_id, false, x);
+              id(cnt_batt_to_inv)++;
+
+      # ── 0x356: Pack voltage / current / temperature ───────────────────────
+      # Bytes 0-1  Voltage      int16 LE  0.01 V/bit
+      # Bytes 2-3  Current      int16 LE  0.1  A/bit  (positive = charging)
+      # Bytes 4-5  Temperature  int16 LE  0.1  °C/bit
+      - can_id: 0x356
+        can_id_mask: 0x7FF
+        use_extended_id: false
+        then:
+          - lambda: |-
+              if (x.size() >= 6) {
+                int16_t v = (int16_t)((uint16_t)x[0] | ((uint16_t)x[1] << 8));
+                int16_t i = (int16_t)((uint16_t)x[2] | ((uint16_t)x[3] << 8));
+                int16_t t = (int16_t)((uint16_t)x[4] | ((uint16_t)x[5] << 8));
+                id(sensor_batt_voltage).publish_state(v * 0.01f);
+                id(sensor_batt_current).publish_state(i * 0.1f);
+                id(sensor_batt_temp).publish_state(t * 0.1f);
+              }
+              id(can_inverter).send_data(can_id, false, x);
+              id(cnt_batt_to_inv)++;
+
+      # ── Catch-all: relay every other battery frame unmodified ──────────────
+      # Because ESPHome fires ALL matching on_frame handlers, the specific
+      # handlers above will also fire for 0x351/355/356.  This catch-all
+      # guards against double-relay by skipping those IDs explicitly.
+      - can_id: 0x000
+        can_id_mask: 0x000
+        use_extended_id: false
+        then:
+          - lambda: |-
+              if (can_id == 0x351 || can_id == 0x355 || can_id == 0x356) return;
+              id(can_inverter).send_data(can_id, false, x);
+              id(cnt_batt_to_inv)++;
+
+# ── Sensors exposed to Home Assistant ─────────────────────────────────────────
+sensor:
+  - platform: template
+    name: "Battery SOC"
+    id: sensor_batt_soc
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: battery
+    state_class: measurement
+
+  - platform: template
+    name: "Battery SOH"
+    id: sensor_batt_soh
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    state_class: measurement
+
+  - platform: template
+    name: "Battery Voltage"
+    id: sensor_batt_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    device_class: voltage
+    state_class: measurement
+
+  - platform: template
+    name: "Battery Current"
+    id: sensor_batt_current
+    unit_of_measurement: "A"
+    accuracy_decimals: 1
+    device_class: current
+    state_class: measurement
+
+  - platform: template
+    name: "Battery Temperature"
+    id: sensor_batt_temp
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    device_class: temperature
+    state_class: measurement
+
+  - platform: template
+    name: "Battery Charge Current Max (Requested)"
+    id: sensor_batt_charge_max
+    unit_of_measurement: "A"
+    accuracy_decimals: 1
+    device_class: current
+    state_class: measurement
+
+# ── Number: HA-set charge-current cap ─────────────────────────────────────────
+# Set to a value lower than the battery's requested max to throttle charging.
+# Set to 200 (or any value ≥ the battery's max) to effectively disable the cap.
+# The cap is automatically cleared when HA disconnects or the value goes stale.
+number:
+  - platform: template
+    name: "Charge Rate Limit"
+    id: charge_limit_number
+    min_value: 0
+    max_value: 200
+    step: 0.5
+    unit_of_measurement: "A"
+    optimistic: true
+    restore_value: true   # remembers last UI value across reboots (display only)
+    set_action:
+      - globals.set:
+          id: charge_limit_amps
+          value: !lambda "return x;"
+      - logger.log:
+          level: INFO
+          tag: mitm
+          format: "Charge-rate limit set to %.1f A"
+          args: ["x"]
+
+# ── Periodic traffic stats ─────────────────────────────────────────────────────
+# Logs counts every 10 s so you can confirm both directions are active without
+# flooding the log with a line per frame.
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          ESP_LOGI("mitm",
+            "Traffic (last 10 s): battery→inverter %u frames, inverter→battery %u frames",
+            id(cnt_batt_to_inv), id(cnt_inv_to_batt));
+          id(cnt_batt_to_inv)  = 0;
+          id(cnt_inv_to_batt) = 0;
+
