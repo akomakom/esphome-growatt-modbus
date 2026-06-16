@@ -21,7 +21,7 @@ Controlling the inverter is not yet(?) supported, aside for setting the clock
 See [esphome-growatt-mitm-can-interceptor.yaml](esphome-growatt-mitm-can-interceptor.yaml)
 
 This is an entirely distinct esphome config for a device with two CAN interfaces that
-can be placed between inverter and battery to mess with CAN fram 0x351 (pylontech charge rate)
+can be placed between inverter and battery to mess with CAN frame 0x351 (pylontech charge rate)
 using Home Assistant.
 
 
