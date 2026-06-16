@@ -8,8 +8,22 @@ eliminating intermediaries like SA.
 
 # Status
 
+## Reading from MODBUS
+
+See [esphome-growatt-sph1000tl-hu-us-b.yaml](esphome-growatt-sph1000tl-hu-us-b.yaml)
+
 Currently data for most telemetry can be extracted in realtime.  
-Controlling the inverter is not yet(?) supported, aside for setting the clock.
+Controlling the inverter is not yet(?) supported, aside for setting the clock 
+        (inverter does not support Daylight Savings Time changes)
+
+## Messing with inverter lithium battery charge rate and limiting SOC
+
+See [esphome-growatt-mitm-can-interceptor.yaml](esphome-growatt-mitm-can-interceptor.yaml)
+
+This is an entirely distinct esphome config for a device with two CAN interfaces that
+can be placed between inverter and battery to mess with CAN fram 0x351 (pylontech charge rate)
+using Home Assistant.
+
 
 Feel free to submit PRs to fix any issues.
 
