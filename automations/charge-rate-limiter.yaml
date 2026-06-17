@@ -1,10 +1,43 @@
-# This example automation goes with the canbus MITM firmware
-# It relies on several helpers 
+# Battery Charge Rate Pacing Automation
+# Pairs with the CANipulator MitM firmware.
 #
+# ── How it works ──────────────────────────────────────────────────────────────
+# Every 5 minutes (and on key sensor changes) it calculates a charge rate limit
+# and writes it to number.solar_canipulator_charge_rate_limit.
+#
+# Three modes:
+#   paced   — Solcast has more than forecast_tight_factor × energy needed.
+#              Charges at (energy_needed / time_remaining) × buffer_factor.
+#              buffer_factor > 1 means we aim to finish before EOD, buying
+#              headroom against forecast error and dropping loads.
+#   max     — Solcast headroom is tight. Use all available surplus power.
+#   floor   — Solar day is over, or battery already at target. Hold min_rate.
+#
+# ── Tuning ────────────────────────────────────────────────────────────────────
+# All tunable constants are in the FIRST variables action step below so they
+# are visible and editable in the HA GUI editor.
+#
+#   buffer_factor        Higher = charges faster relative to "just enough" rate.
+#                        2.5 means aim to finish in 40% of remaining solar time.
+#                        Lower if you frequently overshoot target before EOD.
+#
+#   forecast_tight_factor  Switch from paced→max when Solcast remaining is less
+#                          than this multiple of energy needed. 1.5 = switch to
+#                          max mode when headroom is under 50%. Raise toward 2.0
+#                          if Solcast tends to be optimistic at your location.
+#
+#   sunset_margin_h      Hours before sunset to stop active pacing and hold
+#                        the floor rate. Does NOT affect the paced rate itself.
+#
+#   solcast_low_kwh      Treat solar day as over when remaining < this value.
+
 alias: Battery Charge Rate Pacing
 description: >
   Paces battery charging to reach target SOC near end of solar day, distributing
   export throughout the day and minimising time spent at 100%.
+mode: single
+max_exceeded: silent
+
 triggers:
   - trigger: time_pattern
     minutes: /5
@@ -16,90 +49,98 @@ triggers:
     entity_id: sensor.solar_canipulator_battery_soc
     for:
       minutes: 2
+
 actions:
+  # ── Step 1: constants + raw sensor reads ────────────────────────────────────
+  # *** Edit tunable values here — this block is visible in the GUI editor ***
   - variables:
-      v_target_soc: |
+      # ── Tunable constants ──────────────────────────────────────────────────
+      battery_capacity_kwh: 16.0
+      min_rate: 5.0
+      buffer_factor: 2.5
+      forecast_tight_factor: 1.5
+      solcast_low_kwh: 1.5
+      sunset_margin_h: 2.0
+
+      # ── Sensor reads ───────────────────────────────────────────────────────
+      v_target_soc: >
         {{ states('input_number.battery_charge_max_soc') | float(100) }}
-      v_current_stored: |
+      v_current_stored: >
         {{ states('sensor.ruixu_battery_capacity_helper') | float(0) }}
       v_batt_voltage: >
-        {{ [states('sensor.solar_canipulator_battery_voltage') | float(51.2),
-        40] | max }}
+        {{ [states('sensor.solar_canipulator_battery_voltage') | float(51.2), 40] | max }}
       v_batt_max_req: >
-        {{
-        states('sensor.solar_canipulator_battery_charge_current_max_requested')
-        | float(200) }}
-      v_extra_power_w: |
+        {{ states('sensor.solar_canipulator_battery_charge_current_max_requested') | float(200) }}
+      v_extra_power_w: >
         {{ states('sensor.extra_power') | float(0) }}
       v_solcast_remaining: >
-        {{ states('sensor.solcast_pv_forecast_forecast_remaining_today') |
-        float(0) }}
+        {{ states('sensor.solcast_pv_forecast_forecast_remaining_today') | float(0) }}
       v_hours_until_sunset: >
-        {% set s = state_attr('sun.sun', 'next_setting') | as_datetime %} {{ [(s
-        - now()).total_seconds() / 3600, 0] | max }}
+        {% set s = state_attr('sun.sun', 'next_setting') | as_datetime %}
+        {{ [(s - now()).total_seconds() / 3600, 0] | max }}
+
+  # ── Step 2: first-order derived values ──────────────────────────────────────
   - variables:
-      v_target_energy: |
+      v_target_energy: >
         {{ v_target_soc / 100.0 * battery_capacity_kwh }}
-      v_energy_needed: |
+      v_energy_needed: >
         {{ [v_target_energy - v_current_stored, 0] | max }}
-      v_solar_active: |
+      v_solar_active: >
         {{ v_hours_until_sunset > sunset_margin_h
            and v_solcast_remaining > solcast_low_kwh }}
-      v_available_amps: |
+      v_available_amps: >
         {{ [v_extra_power_w / v_batt_voltage, 0] | max }}
+
+  # ── Step 3: time-based rate ──────────────────────────────────────────────────
   - variables:
-      v_time_h: |
+      v_time_h: >
         {{ v_hours_until_sunset if v_solar_active else 0 }}
-      v_needed_amps: |
+      v_needed_amps: >
         {% if v_time_h > 0 and v_energy_needed > 0 %}
           {{ v_energy_needed / v_time_h * 1000.0 / v_batt_voltage }}
         {% else %}
           {{ 0 }}
         {% endif %}
-      v_forecast_tight: |
+      v_forecast_tight: >
         {{ v_solcast_remaining < v_energy_needed * forecast_tight_factor }}
+
+  # ── Step 4: select rate and mode label ──────────────────────────────────────
   - variables:
-      v_rate: |
+      v_rate: >
         {% if not v_solar_active %}
-          {# Night or solar exhausted — floor only #}
           {{ min_rate }}
         {% elif v_energy_needed <= 0.1 %}
-          {# Already at or above target SOC — floor only #}
           {{ min_rate }}
         {% elif v_forecast_tight %}
-          {# Forecast tight — grab all available surplus, cap at BMS request #}
           {{ [[v_available_amps, min_rate] | max, v_batt_max_req] | min }}
         {% else %}
-          {# Paced — buffered rate toward EOD, bounded by BMS and floor #}
           {{ [[v_needed_amps * buffer_factor, min_rate] | max, v_batt_max_req] | min }}
         {% endif %}
       v_mode: >
-        {% if not v_solar_active %}floor — no solar {% elif v_energy_needed <=
-        0.1 %}floor — at target {% elif v_forecast_tight %}max — short forecast
-        {% else %}paced {% endif %}
+        {% if not v_solar_active %}floor — no solar
+        {% elif v_energy_needed <= 0.1 %}floor — at target
+        {% elif v_forecast_tight %}max — short forecast
+        {% else %}paced
+        {% endif %}
+
+  # ── Apply ────────────────────────────────────────────────────────────────────
   - action: number.set_value
     target:
       entity_id: number.solar_canipulator_charge_rate_limit
     data:
       value: "{{ v_rate | round(1) }}"
+
+  # ── Diagnostic log ───────────────────────────────────────────────────────────
   - action: system_log.write
     data:
       level: info
       logger: battery_charge_pacing
       message: >
-        mode={{ v_mode }} | soc={{
-        states('sensor.solar_canipulator_battery_soc') }}% | stored={{
-        v_current_stored | round(2) }}/{{ v_target_energy | round(2) }} kWh |
-        needed={{ v_energy_needed | round(2) }} kWh | time_left={{ v_time_h |
-        round(2) }}h | solcast={{ v_solcast_remaining | round(2) }} kWh |
-        needed_A={{ v_needed_amps | round(1) }} | set={{ v_rate | round(1) }}A
-mode: single
-max_exceeded: silent
-variables:
-  battery_capacity_kwh: 16
-  min_rate: 5
-  buffer_factor: 1.4
-  solcast_low_kwh: 1.5
-  sunset_margin_h: 2
-  forecast_tight_factor: 1.05
-
+        mode={{ v_mode }} |
+        soc={{ states('sensor.solar_canipulator_battery_soc') }}% |
+        stored={{ v_current_stored | round(2) }}/{{ v_target_energy | round(2) }} kWh |
+        needed={{ v_energy_needed | round(2) }} kWh |
+        time_left={{ v_time_h | round(2) }}h |
+        solcast={{ v_solcast_remaining | round(2) }} kWh |
+        needed_A={{ v_needed_amps | round(1) }} |
+        set={{ v_rate | round(1) }}A
