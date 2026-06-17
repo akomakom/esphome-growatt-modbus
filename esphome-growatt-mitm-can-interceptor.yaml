@@ -64,22 +64,35 @@ logger:
     canbus: WARN     # suppress per-frame canbus component noise
     mitm: INFO       # our own tag — periodic stats and limit changes
 
+
+
 # ── Home Assistant API ────────────────────────────────────────────────────────
 api:
   encryption:
     key: !secret api_key
   # Do not reboot if HA is unavailable — CAN relaying must continue regardless.
   reboot_timeout: 0s
+  on_client_connected:
+    then:
+      - globals.set:
+          id: ha_connected
+          value: "true"
+      - lambda: |-
+          if (id(charge_limit_amps) >= 0.0f) {
+            ESP_LOGI("mitm", "HA connected — charge limit %.1f A restored and active",
+                     id(charge_limit_amps));
+          } else {
+            ESP_LOGI("mitm", "HA connected — no charge limit set");
+          }
   on_client_disconnected:
     then:
+      - globals.set:
+          id: ha_connected
+          value: "false"
       - logger.log:
           level: WARN
           tag: mitm
-          format: "HA disconnected — charge-limit override cleared"
-      - globals.set:
-          id: charge_limit_amps
-          value: "-1.0"
-      # charge_limit_amps already reset above; no timestamp to clear
+          format: "HA disconnected — charge limit suspended (value retained for reconnect)"
 
 
 # ── GPIO outputs: transceiver STANDBY / SHUTDOWN ─────────────────────────────
@@ -120,6 +133,17 @@ globals:
   # frame arrives so we don't false-trip on a cold start.
   - id: last_rx_ms
     type: uint32_t
+    restore_value: false
+    initial_value: "0"
+
+  # Last-seen 0x351 state — written by the frame handler, read by the interval log.
+  # Using globals avoids any logging in the hot path.
+  - id: last_batt_ask_amps     # battery's most recent requested max charge current
+    type: float
+    restore_value: false
+    initial_value: "0.0"
+  - id: last_cap_state         # 0=no limit, 1=capped, 2=limit>=ask (passing), 3=HA disconnected
+    type: int
     restore_value: false
     initial_value: "0"
 
@@ -206,10 +230,12 @@ canbus:
                 limit_active = true;
               }
 
-              if (limit_active) {
-                ESP_LOGD("mitm", "0x351: charge current capped %.1f A → %.1f A",
-                         batt_cc_amps, cap);
-              }
+              // Record state for the interval logger — no logging in the frame path.
+              id(last_batt_ask_amps) = batt_cc_amps;
+              if (limit_active)                          id(last_cap_state) = 1;
+              else if (!id(ha_connected))                id(last_cap_state) = 3;
+              else if (cap >= 0.0f)                      id(last_cap_state) = 2;
+              else                                       id(last_cap_state) = 0;
 
               id(can_inverter).send_data(can_id, false, fwd);
               id(cnt_batt_to_inv)++;
@@ -345,10 +371,21 @@ interval:
   - interval: 10s
     then:
       - lambda: |-
+          const char* cap_str;
+          switch (id(last_cap_state)) {
+            case 1:  cap_str = "CAPPED";              break;
+            case 2:  cap_str = "passing (limit>=ask)"; break;
+            case 3:  cap_str = "passing (HA disconn)"; break;
+            default: cap_str = "passing (no limit)";  break;
+          }
+          float lim = id(charge_limit_amps);
           ESP_LOGI("mitm",
-            "Traffic (last 10 s): battery→inverter %u frames, inverter→battery %u frames",
-            id(cnt_batt_to_inv), id(cnt_inv_to_batt));
-          id(cnt_batt_to_inv)  = 0;
+            "Traffic (last 10 s): batt→inv %u, inv→batt %u | "
+            "batt_ask=%.1fA limit=%.1fA %s | HA=%s",
+            id(cnt_batt_to_inv), id(cnt_inv_to_batt),
+            id(last_batt_ask_amps), lim, cap_str,
+            id(ha_connected) ? "ok" : "DISCONNECTED");
+          id(cnt_batt_to_inv) = 0;
           id(cnt_inv_to_batt) = 0;
 
   # ── CAN bus watchdog ───────────────────────────────────────────────────────
