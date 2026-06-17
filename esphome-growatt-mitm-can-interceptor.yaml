@@ -81,6 +81,7 @@ api:
           value: "-1.0"
       # charge_limit_amps already reset above; no timestamp to clear
 
+
 # ── GPIO outputs: transceiver STANDBY / SHUTDOWN ─────────────────────────────
 # All four pins are simply held LOW for normal transceiver operation.
 output:
@@ -99,11 +100,28 @@ output:
 
 # ── Globals ───────────────────────────────────────────────────────────────────
 globals:
-  # HA-provided charge-current cap (A).  -1.0 = no override active.
+  # HA-provided charge-current cap (A).  -1.0 = no override ever set.
+  # restore_value: true so the limit survives reboots without requiring the
+  # user to touch the entity again.  Applied only when ha_connected is true.
   - id: charge_limit_amps
     type: float
-    restore_value: false
+    restore_value: true
     initial_value: "-1.0"
+
+  # True only while an HA client is actively connected.  Starts false so
+  # the cap is not applied during boot before HA has authenticated.
+  - id: ha_connected
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+  # Watchdog: millis() timestamp of last frame received on either bus.
+  # Initialised to 0; the watchdog interval skips the check until the first
+  # frame arrives so we don't false-trip on a cold start.
+  - id: last_rx_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
 
   # Rolling frame counters — reset every stats interval.
   - id: cnt_batt_to_inv
@@ -135,6 +153,7 @@ canbus:
         use_extended_id: false
         then:
           - lambda: |-
+              id(last_rx_ms) = millis();
               id(can_battery).send_data(can_id, false, x);
               id(cnt_inv_to_batt)++;
 
@@ -172,13 +191,15 @@ canbus:
 
               id(sensor_batt_charge_max).publish_state(batt_cc_amps);
 
-              // Apply HA cap if set and below what the battery requests.
-              // Cleared automatically on HA disconnect via on_client_disconnected.
+              // Apply HA cap only while HA is connected and cap < battery ask.
+              // Value persists across reboots; gating on ha_connected ensures
+              // the cap is not applied before HA has authenticated after boot,
+              // or during a temporary disconnect.
               std::vector<uint8_t> fwd(x);
               float cap = id(charge_limit_amps);
               bool  limit_active = false;
 
-              if (cap >= 0.0f && cap < batt_cc_amps) {
+              if (id(ha_connected) && cap >= 0.0f && cap < batt_cc_amps) {
                 uint16_t cap_raw = (uint16_t)(cap * 10.0f);
                 fwd[2] = (uint8_t)(cap_raw & 0xFF);
                 fwd[3] = (uint8_t)(cap_raw >> 8);
@@ -239,6 +260,7 @@ canbus:
         use_extended_id: false
         then:
           - lambda: |-
+              id(last_rx_ms) = millis();  // stamp before the skip guard
               if (can_id == 0x351 || can_id == 0x355 || can_id == 0x356) return;
               id(can_inverter).send_data(can_id, false, x);
               id(cnt_batt_to_inv)++;
@@ -328,4 +350,30 @@ interval:
             id(cnt_batt_to_inv), id(cnt_inv_to_batt));
           id(cnt_batt_to_inv)  = 0;
           id(cnt_inv_to_batt) = 0;
+
+  # ── CAN bus watchdog ───────────────────────────────────────────────────────
+  # If the TWAI controller enters bus-off (TX Error Counter > 255 due to
+  # unacknowledged frames), all send_data calls return error 2 and both buses
+  # go silent.  ESPHome has no built-in bus-off recovery, so the only reliable
+  # fix is a soft reset.
+  #
+  # Trigger condition: no frame received on either bus for 60 s AND we have
+  # previously received at least one frame (last_rx_ms != 0, so cold-start
+  # silence doesn't trip the watchdog).
+  #
+  # 60 s is conservative — the Pylontech/Growatt protocol sends frames every
+  # second or faster.  Adjust down to 30 s if you want faster recovery.
+  - interval: 15s
+    then:
+      - lambda: |-
+          if (id(last_rx_ms) == 0) return;   // not yet received anything — skip
+          uint32_t silence_ms = millis() - id(last_rx_ms);
+          if (silence_ms > 60000) {
+            ESP_LOGE("mitm",
+              "No CAN frames received for %u ms — TWAI likely in bus-off. Rebooting.",
+              silence_ms);
+            // Brief delay so the log line can flush before reset
+            delay(200);
+            esp_restart();
+          }
 
