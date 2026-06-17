@@ -84,7 +84,6 @@ api:
           tag: mitm
           format: "HA client disconnected (informational — limit expires after 10 min without update)"
 
-
 # ── GPIO outputs: transceiver STANDBY / SHUTDOWN ─────────────────────────────
 # All four pins are simply held LOW for normal transceiver operation.
 output:
@@ -120,10 +119,14 @@ globals:
     restore_value: false
     initial_value: "0"
 
-  # Watchdog: millis() timestamp of last frame received on either bus.
-  # Initialised to 0; the watchdog interval skips the check until the first
-  # frame arrives so we don't false-trip on a cold start.
-  - id: last_rx_ms
+  # Per-bus watchdog timestamps.  Tracked separately so a single-bus failure
+  # (e.g. CAN0 bus-off while CAN1 is still active) is detected.
+  # Both start at 0; the watchdog skips a bus until its first frame arrives.
+  - id: last_rx_batt_ms    # last frame received FROM battery (CAN1)
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
+  - id: last_rx_inv_ms     # last frame received FROM inverter (CAN0)
     type: uint32_t
     restore_value: false
     initial_value: "0"
@@ -169,7 +172,7 @@ canbus:
         use_extended_id: false
         then:
           - lambda: |-
-              id(last_rx_ms) = millis();
+              id(last_rx_inv_ms) = millis();
               id(can_battery).send_data(can_id, false, x);
               id(cnt_inv_to_batt)++;
 
@@ -281,7 +284,7 @@ canbus:
         use_extended_id: false
         then:
           - lambda: |-
-              id(last_rx_ms) = millis();  // stamp before the skip guard
+              id(last_rx_batt_ms) = millis();  // stamp before the skip guard
               if (can_id == 0x351 || can_id == 0x355 || can_id == 0x356) return;
               id(can_inverter).send_data(can_id, false, x);
               id(cnt_batt_to_inv)++;
@@ -385,10 +388,33 @@ interval:
           id(cnt_batt_to_inv) = 0;
           id(cnt_inv_to_batt) = 0;
 
-  # ── CAN bus watchdog ───────────────────────────────────────────────────────
-  # If the TWAI controller enters bus-off (TX Error Counter > 255 due to
-  # unacknowledged frames), all send_data calls return error 2 and both buses
-  # go silent.  ESPHome has no built-in bus-off recovery, so the only reliable
-  # fix is a soft reset.
+  # ── Per-bus CAN watchdog ──────────────────────────────────────────────────
+  # Monitors each bus independently.  A single-bus failure (e.g. CAN0 bus-off
+  # while CAN1 is still active) would not trip a combined watchdog, so the
+  # timestamps are tracked and checked separately.
   #
-  # Trigger condition: no frame 
+  # Battery (CAN1): broadcasts ~2 Hz; 30 s silence = definite failure.
+  # Inverter (CAN0): sends ~1 Hz when active; 30 s silence = definite failure.
+  # Both skip the check until the first frame arrives on that bus (== 0 guard)
+  # so a cold-start where one side powers up slowly doesn't false-trip.
+  - interval: 15s
+    then:
+      - lambda: |-
+          uint32_t now_ms = millis();
+          const uint32_t SILENCE_MS = 30000;
+
+          bool batt_dead = (id(last_rx_batt_ms) != 0) &&
+                           ((now_ms - id(last_rx_batt_ms)) > SILENCE_MS);
+          bool inv_dead  = (id(last_rx_inv_ms)  != 0) &&
+                           ((now_ms - id(last_rx_inv_ms))  > SILENCE_MS);
+
+          if (batt_dead || inv_dead) {
+            ESP_LOGE("mitm",
+              "CAN watchdog: %s%s silent >%u ms — TWAI bus-off likely. Rebooting.",
+              batt_dead ? "battery " : "",
+              inv_dead  ? "inverter" : "",
+              SILENCE_MS);
+            delay(200);
+            esp_restart();
+          }
+
