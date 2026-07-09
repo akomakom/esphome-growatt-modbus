@@ -52,25 +52,25 @@ sensor:
   - platform: homeassistant
     entity_id: sensor.esphome_solar_1_battery_soc
     id: ha_battery_soc
-    on_value:
+    on_raw_value:
       then:
         - lambda: 'id(last_update_time) = millis();'
   - platform: homeassistant
     entity_id: sensor.esphome_solar_1_house_load_power
     id: ha_house_load
-    on_value:
+    on_raw_value:
       then:
         - lambda: 'id(last_update_time) = millis();'
   - platform: homeassistant
     entity_id: sensor.esphome_solar_1_pv_input_power
     id: ha_pv_power
-    on_value:
+    on_raw_value:
       then:
         - lambda: 'id(last_update_time) = millis();'
   - platform: homeassistant
     entity_id: sensor.esphome_solar_1_battery_power_net
     id: ha_battery_power_net
-    on_value:
+    on_raw_value:
       then:
         - lambda: 'id(last_update_time) = millis();'
 
