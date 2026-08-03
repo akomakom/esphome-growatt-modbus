@@ -117,19 +117,17 @@ text_sensor:
       }
 
 
-# Define your anchor once near the top
-.outlier_lambda: &outlier_lambda
-  lambda: |-
-    static float last_valid = NAN;
-    // ESP_LOGW("filter", "Last value: %0.0f, New value %0.0f", last_valid, x);
-    if (!isnan(last_valid) && last_valid > 0.0f && x > last_valid * 1000.0f) {
-      ESP_LOGW("filter", "Rejected extreme outlier spike! Current: %.1f, New: %.1f", 
-              last_valid, x);
-      return {};  // reject: >1000x jump is a glitch, not real data
-    }
-    last_valid = x;
-    return x;    
+.filters_for_totals: &filters_for_totals
+  - multiply: 0.1
+  - filter_out: 0.0
+  # This will delay new values by up to two readings.
+  # but will reject spurious junk like 1000,0,1000 or 1000,999999,1000
+  - quantile:
+      window_size: 3
+      send_every: 1
+      quantile: 0.5    
 
+      
 sensor:
 # ============================================
 # INVERTER STATUS & OPERATION
@@ -1010,8 +1008,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Today PV Production (Address 1149-1150)
   - platform: modbus_controller
@@ -1025,8 +1022,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Today Load Energy from Inverter (Address 1060-1061)
   - platform: modbus_controller
@@ -1040,8 +1036,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Today Grid Import Energy (Address 1044-1045)
   - platform: modbus_controller
@@ -1055,8 +1050,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Today Grid Export Energy (Address 1048-1049)
   - platform: modbus_controller
@@ -1071,8 +1065,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Today Battery Charge (Address 1056-1057)
   - platform: modbus_controller
@@ -1087,8 +1080,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Today Battery Discharge (Address 1052-1053)
   - platform: modbus_controller
@@ -1103,8 +1095,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
 # ============================================
 # ENERGY COUNTERS - LIFETIME
@@ -1123,8 +1114,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Total PV Production (Address 91-92)
   - platform: modbus_controller
@@ -1139,8 +1129,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Total Inverter to Load Energy (Address 1046-1047)
   - platform: modbus_controller
@@ -1155,8 +1144,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
+    filters: *filters_for_totals
 
   # Total Grid Export (Address 1050-1051)
   - platform: modbus_controller
@@ -1170,9 +1158,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
-      - <<: *outlier_lambda
+    filters: *filters_for_totals
 
   # Total Battery Charge (Address 1058-1059)
   - platform: modbus_controller
@@ -1186,9 +1172,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
-      - <<: *outlier_lambda
+    filters: *filters_for_totals
 
   # Total Battery Discharge (Address 1054-1055)
   - platform: modbus_controller
@@ -1202,9 +1186,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters:
-      - multiply: 0.1
-      - <<: *outlier_lambda
+    filters: *filters_for_totals
 
   # Self Consumption Energy Total (Address 1143-1144)
   - platform: modbus_controller
@@ -1219,9 +1201,7 @@ sensor:
     state_class: total_increasing
     skip_updates: ${skip_count_for_counters}
     accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-      - <<: *outlier_lambda
+    filters: *filters_for_totals
 
 # ============================================
 # PV STRING ENERGY COUNTERS (Optional)
