@@ -117,6 +117,7 @@ text_sensor:
       }
 
 
+# This is for lifetime totals
 .filters_for_totals: &filters_for_totals
   - multiply: 0.1
   - filter_out: 0.0
@@ -127,6 +128,16 @@ text_sensor:
       send_every: 1
       quantile: 0.5    
 
+
+# same but without filter_out: 0      
+.filters_for_daily_totals: &filters_for_daily_totals
+  - multiply: 0.1
+  # This will delay new values by up to two readings.
+  # but will reject spurious junk like 1000,0,1000 or 1000,999999,1000
+  - quantile:
+      window_size: 3
+      send_every: 1
+      quantile: 0.5    
       
 sensor:
 # ============================================
@@ -1008,7 +1019,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters: *filters_for_totals
+    filters: *filters_for_daily_totals
 
   # Today PV Production (Address 1149-1150)
   - platform: modbus_controller
@@ -1022,7 +1033,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters: *filters_for_totals
+    filters: *filters_for_daily_totals
 
   # Today Load Energy from Inverter (Address 1060-1061)
   - platform: modbus_controller
@@ -1036,7 +1047,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters: *filters_for_totals
+    filters: *filters_for_daily_totals
 
   # Today Grid Import Energy (Address 1044-1045)
   - platform: modbus_controller
@@ -1050,7 +1061,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters: *filters_for_totals
+    filters: *filters_for_daily_totals
 
   # Today Grid Export Energy (Address 1048-1049)
   - platform: modbus_controller
@@ -1065,7 +1076,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters: *filters_for_totals
+    filters: *filters_for_daily_totals
 
   # Today Battery Charge (Address 1056-1057)
   - platform: modbus_controller
@@ -1080,7 +1091,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters: *filters_for_totals
+    filters: *filters_for_daily_totals
 
   # Today Battery Discharge (Address 1052-1053)
   - platform: modbus_controller
@@ -1095,7 +1106,7 @@ sensor:
     state_class: total_increasing
     accuracy_decimals: 1
     skip_updates: ${skip_count_for_counters}
-    filters: *filters_for_totals
+    filters: *filters_for_daily_totals
 
 # ============================================
 # ENERGY COUNTERS - LIFETIME
