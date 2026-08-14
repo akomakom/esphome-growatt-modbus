@@ -1142,6 +1142,20 @@ sensor:
     skip_updates: ${skip_count_for_counters}
     filters: *filters_for_totals
 
+  # Total Load Energy from Inverter (Address 1062-1063)
+  - platform: modbus_controller
+    modbus_controller_id: growatt_sph
+    address: 1062
+    name: "Total Inverter to Load Energy"
+    register_type: read
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 1
+    skip_updates: ${skip_count_for_counters}
+    filters: *filters_for_totals
+
   # Total Inverter to Load Energy (Address 1046-1047)
   - platform: modbus_controller
     modbus_controller_id: growatt_sph
